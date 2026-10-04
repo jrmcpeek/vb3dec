@@ -2196,5 +2196,167 @@ func TestSelectCasePartialStack(t *testing.T) {
 	}
 }
 
+// TestSlotProcedureEndingRegression verifies that frm8.sub0C1D (Slot) does not emit
+// a spurious bare "End" before "End Sub" due to an intervening newline before EOS.
+func TestSlotProcedureEndingRegression(t *testing.T) {
+	_, proj := getTestProject(t)
+	d := pcode.NewDisassembler(proj)
+
+	var sub0C1D *pcode.Procedure
+	for _, m := range proj.Modules {
+		if m.Name == "frm8" {
+			for _, proc := range m.Procedures {
+				if proc.Name == "sub0C1D" {
+					sub0C1D = proc
+					break
+				}
+			}
+		}
+	}
+	if sub0C1D == nil {
+		t.Fatal("sub0C1D (Slot) procedure not found in frm8")
+	}
+
+	code, err := d.DisassembleProcedure(sub0C1D)
+	if err != nil {
+		t.Fatalf("DisassembleProcedure(sub0C1D) failed: %v", err)
+	}
+
+	tbl := pcode.GetOpcodeTable()
+	bc := sub0C1D.Bytecode
+	for pc := 0x11D0; pc < len(bc); {
+		startPC := pc
+		tok := binary.LittleEndian.Uint16(bc[pc : pc+2])
+		pc += 2
+		info, _ := tbl.Lookup(tok)
+		if info != nil {
+			params := make([]uint16, info.NumParams)
+			for i := 0; i < info.NumParams && pc+2 <= len(bc); i++ {
+				params[i] = binary.LittleEndian.Uint16(bc[pc : pc+2])
+				pc += 2
+			}
+			t.Logf("[%04X] tok=0x%04X (TokenID=%d) kw=%q case=%d params=%v", startPC, tok, info.TokenID, info.Keyword, info.Case, params)
+		}
+	}
+
+	lines := strings.Split(strings.TrimSpace(code), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("sub0C1D code too short: %q", code)
+	}
+	lastLine := strings.TrimSpace(lines[len(lines)-1])
+	secondLastLine := strings.TrimSpace(lines[len(lines)-2])
+
+	if lastLine != "End Sub" {
+		t.Errorf("Expected last line to be 'End Sub', got %q", lastLine)
+	}
+	if secondLastLine != "sub0D33" {
+		t.Errorf("Expected second-to-last line to be 'sub0D33', got %q", secondLastLine)
+	}
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "End" {
+			t.Errorf("Line %d: unexpected spurious bare 'End' statement in sub0C1D:\n%s", i+1, code)
+		}
+	}
+}
+
+// TestProcedureEndTokensSyntheticRegression verifies:
+// 1. token57 -> EOS (standard 190 procedure endings): output suppressed (no bare End)
+// 2. token57 -> newline -> EOS (Slot pattern): output suppressed (no bare End)
+// 3. token55 -> newline -> EOS: real End statement retained
+// 4. token55 -> newline -> token57 -> EOS: real End statement retained, token 57 suppressed
+func TestProcedureEndTokensSyntheticRegression(t *testing.T) {
+	tbl := pcode.GetOpcodeTable()
+	getPToken := func(tokenID uint16) uint16 {
+		for pTok := uint16(1); pTok < 0xFFFF; pTok += 3 {
+			info, _ := tbl.Lookup(pTok)
+			if info != nil && info.TokenID == tokenID {
+				return pTok
+			}
+		}
+		t.Fatalf("No pToken found for TokenID %d", tokenID)
+		return 0
+	}
+
+	tokEndStmt := getPToken(55)   // Application statement "End"
+	tokEndStruct := getPToken(57) // Structural procedure ending "End "
+	tokNL := getPToken(0)         // nl
+	tokEOS := getPToken(9)        // eos
+
+	disasmBC := func(tokens ...uint16) string {
+		var bc []byte
+		for _, tok := range tokens {
+			bc = append(bc, byte(tok), byte(tok>>8))
+		}
+		proc := &pcode.Procedure{
+			Name:     "testProc",
+			IsLocal:  true,
+			Bytecode: bc,
+		}
+		d := pcode.NewDisassembler(nil)
+		code, err := d.DisassembleProcedure(proc)
+		if err != nil {
+			t.Fatalf("DisassembleProcedure failed: %v", err)
+		}
+		return code
+	}
+
+	// 1. token57 -> EOS: must NOT emit bare "End"
+	{
+		code := disasmBC(tokEndStruct, tokEOS)
+		for _, line := range strings.Split(code, "\n") {
+			if strings.TrimSpace(line) == "End" {
+				t.Errorf("Pattern [token57 -> EOS] incorrectly emitted bare 'End':\n%s", code)
+			}
+		}
+		if !strings.Contains(code, "End Sub") {
+			t.Errorf("Pattern [token57 -> EOS] missing 'End Sub':\n%s", code)
+		}
+	}
+
+	// 2. token57 -> newline -> EOS: must NOT emit bare "End"
+	{
+		code := disasmBC(tokEndStruct, tokNL, tokEOS)
+		for _, line := range strings.Split(code, "\n") {
+			if strings.TrimSpace(line) == "End" {
+				t.Errorf("Pattern [token57 -> newline -> EOS] incorrectly emitted bare 'End':\n%s", code)
+			}
+		}
+		if !strings.Contains(code, "End Sub") {
+			t.Errorf("Pattern [token57 -> newline -> EOS] missing 'End Sub':\n%s", code)
+		}
+	}
+
+	// 3. token55 -> newline -> EOS: MUST retain the real "End"
+	{
+		code := disasmBC(tokEndStmt, tokNL, tokEOS)
+		foundEnd := false
+		for _, line := range strings.Split(code, "\n") {
+			if strings.TrimSpace(line) == "End" {
+				foundEnd = true
+			}
+		}
+		if !foundEnd {
+			t.Errorf("Pattern [token55 -> newline -> EOS] failed to emit real 'End':\n%s", code)
+		}
+	}
+
+	// 4. token55 -> newline -> token57 -> EOS: MUST retain the real "End"
+	{
+		code := disasmBC(tokEndStmt, tokNL, tokEndStruct, tokEOS)
+		endCount := 0
+		for _, line := range strings.Split(code, "\n") {
+			if strings.TrimSpace(line) == "End" {
+				endCount++
+			}
+		}
+		if endCount != 1 {
+			t.Errorf("Pattern [token55 -> newline -> token57 -> EOS] expected exactly 1 'End', got %d:\n%s", endCount, code)
+		}
+	}
+}
+
+
 
 

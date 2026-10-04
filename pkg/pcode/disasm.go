@@ -1953,15 +1953,14 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 			s.emitStatement(stmt)
 		}
 
-	case kw == "End " || kw == "End":
-		if s.ifCond == "" && s.pc+2 <= len(s.bc) {
-			nextTok := binary.LittleEndian.Uint16(s.bc[s.pc : s.pc+2])
-			nextInfo, _ := s.table.Lookup(nextTok)
-			if nextInfo != nil && (nextInfo.Case == 4 || nextInfo.Keyword == "eos") {
-				return
-			}
-		}
+	case info.TokenID == 55 || (kw == "End" && info.TokenID != 57):
+		// Application statement: End (terminates application execution)
 		s.emitStatement("End")
+
+	case info.TokenID == 57 || kw == "End ":
+		// Structural procedure return epilogue (End Sub / End Function).
+		// The closing statement is emitted structurally by renderProcedure().
+		return
 
 	case strings.HasPrefix(kw, "var()="):
 		numDims := 1
