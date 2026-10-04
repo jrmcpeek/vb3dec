@@ -2470,15 +2470,31 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		s.caseIndentStack = append(s.caseIndentStack, false)
 
 	case strings.TrimSpace(kw) == "Case":
-		val := s.pop()
+		var caseExpr string
+		if info.TokenID == 39 || info.BitForward2 == 2 {
+			toVal := s.pop()
+			fromVal := s.pop()
+			if fromVal != "" {
+				caseExpr = fmt.Sprintf("%s To %s", fromVal, toVal)
+			} else {
+				caseExpr = toVal
+			}
+		} else {
+			caseExpr = s.pop()
+		}
 		if len(s.caseIndentStack) > 0 && s.caseIndentStack[len(s.caseIndentStack)-1] {
 			s.indent--
 		}
-		s.emitLine(fmt.Sprintf("Case %s", val))
+		s.emitLine(fmt.Sprintf("Case %s", caseExpr))
 		s.indent++
 		if len(s.caseIndentStack) > 0 {
 			s.caseIndentStack[len(s.caseIndentStack)-1] = true
 		}
+
+	case info.TokenID >= 40 && info.TokenID <= 45:
+		arg := s.pop()
+		op := strings.TrimSpace(kw)
+		s.push(fmt.Sprintf("%s %s", op, arg))
 
 	case strings.TrimSpace(kw) == "Case Else":
 		if len(s.caseIndentStack) > 0 && s.caseIndentStack[len(s.caseIndentStack)-1] {

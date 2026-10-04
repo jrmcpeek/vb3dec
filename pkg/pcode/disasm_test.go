@@ -1943,3 +1943,258 @@ func TestFormAndControlEventMapping(t *testing.T) {
 		t.Errorf("Form_DblClick procedure not found in frm8")
 	}
 }
+
+// TestDebilitatorRangeCasesRegression verifies that the two range Case statements
+// in frm8.sub0C5C (the Debilitator weapons section) are decompiled as
+// "Case 9 To 12" and "Case 13 To 16", with no orphan literals emitted.
+func TestDebilitatorRangeCasesRegression(t *testing.T) {
+	_, proj := getTestProject(t)
+	d := pcode.NewDisassembler(proj)
+
+	var sub0C5C *pcode.Procedure
+	for _, m := range proj.Modules {
+		if m.Name == "frm8" {
+			for _, proc := range m.Procedures {
+				if proc.Name == "sub0C5C" {
+					sub0C5C = proc
+					break
+				}
+			}
+		}
+	}
+	if sub0C5C == nil {
+		t.Fatal("sub0C5C procedure not found in frm8")
+	}
+
+	code, err := d.DisassembleProcedure(sub0C5C)
+	if err != nil {
+		t.Fatalf("DisassembleProcedure(sub0C5C) failed: %v", err)
+	}
+
+	// 1. Verify range headers are correctly emitted
+	if !strings.Contains(code, "Case 9 To 12") {
+		t.Errorf("Expected 'Case 9 To 12' in sub0C5C, but not found")
+	}
+	if !strings.Contains(code, "Case 13 To 16") {
+		t.Errorf("Expected 'Case 13 To 16' in sub0C5C, but not found")
+	}
+
+	// 2. Verify previous defective headers ("Case 12" and "Case 16") are absent in Debilitator block
+	lines := strings.Split(code, "\n")
+	inDebilitatorBlock := false
+	for lineIdx, rawLine := range lines {
+		trimmed := strings.TrimSpace(rawLine)
+
+		if strings.Contains(trimmed, "Select Case l0284") {
+			inDebilitatorBlock = true
+		}
+		if inDebilitatorBlock && trimmed == "End Select" {
+			inDebilitatorBlock = false
+		}
+
+		if inDebilitatorBlock {
+			if trimmed == "Case 12" {
+				t.Errorf("Line %d: found defective 'Case 12' in Debilitator Select block; expected 'Case 9 To 12'", lineIdx+1)
+			}
+			if trimmed == "Case 16" {
+				t.Errorf("Line %d: found defective 'Case 16' in Debilitator Select block; expected 'Case 13 To 16'", lineIdx+1)
+			}
+			// 3. Ensure no orphan literal statements "9" or "13" exist
+			if trimmed == "9" {
+				t.Errorf("Line %d: found orphan literal '9' on its own line after Case header", lineIdx+1)
+			}
+			if trimmed == "13" {
+				t.Errorf("Line %d: found orphan literal '13' on its own line after Case header", lineIdx+1)
+			}
+		}
+	}
+
+	// 4. Verify ordinary cases in the same Debilitator block remain intact
+	for c := 1; c <= 8; c++ {
+		expectedCase := fmt.Sprintf("Case %d", c)
+		if !strings.Contains(code, expectedCase) {
+			t.Errorf("Missing expected ordinary case %q in sub0C5C", expectedCase)
+		}
+	}
+	if !strings.Contains(code, "Case Else") {
+		t.Errorf("Missing 'Case Else' in sub0C5C")
+	}
+}
+
+// TestSelectCaseSyntheticBytecode verifies ordinary cases (token 38), range cases (token 39),
+// relational cases (tokens 40-45), and partial stack handling.
+func TestSelectCaseSyntheticBytecode(t *testing.T) {
+	tbl := pcode.GetOpcodeTable()
+
+	// Helper to find a valid pToken for a given TokenID
+	getPToken := func(tokenID uint16) uint16 {
+		for pTok := uint16(1); pTok < 0xFFFF; pTok += 3 {
+			info, _ := tbl.Lookup(pTok)
+			if info != nil && info.TokenID == tokenID {
+				return pTok
+			}
+		}
+		t.Fatalf("No pToken found for TokenID %d", tokenID)
+		return 0
+	}
+
+	tokVar := getPToken(11)        // var
+	tokSelect := getPToken(86)     // Select Case
+	tokConstInt := getPToken(229)  // c% (takes 1 param)
+	tokCaseSingle := getPToken(38) // Case (single expr, BitForward2=1)
+	tokCaseRange := getPToken(39)  // Case (range expr, BitForward2=2)
+	tokCaseIsLt := getPToken(41)   // Is < (BitForward2=1)
+	tokCaseIsGte := getPToken(44)  // Is >= (BitForward2=1)
+	tokCaseElse := getPToken(37)   // Case Else
+	tokEndSelect := getPToken(58)  // End Select
+	tokNL := getPToken(0)          // nl
+	tokEOS := getPToken(9)         // eos
+
+	// Construct bytecode for:
+	// Select Case v0020
+	//   Case 42
+	//   Case 1 To 10
+	//   Case Is < 5
+	//   Case Is >= 50
+	//   Case Else
+	// End Select
+	var bc []byte
+	appendU16 := func(val uint16) {
+		bc = append(bc, byte(val), byte(val>>8))
+	}
+
+	// 1. Select Case v0020
+	appendU16(tokVar)
+	appendU16(0x0020) // var offset
+	appendU16(tokSelect)
+	appendU16(0) // dummy target param for Select Case
+	appendU16(tokNL)
+
+	// 2. Case 42 (token 38)
+	appendU16(tokConstInt)
+	appendU16(42)
+	appendU16(tokCaseSingle)
+	appendU16(tokNL)
+
+	// 3. Case 1 To 10 (token 39)
+	// Push lower (1), then push upper (10), then tokCaseRange
+	appendU16(tokConstInt)
+	appendU16(1)
+	appendU16(tokConstInt)
+	appendU16(10)
+	appendU16(tokCaseRange)
+	appendU16(tokNL)
+
+	// 4. Case Is < 5 (token 41 + token 38)
+	appendU16(tokConstInt)
+	appendU16(5)
+	appendU16(tokCaseIsLt)
+	appendU16(tokCaseSingle)
+	appendU16(tokNL)
+
+	// 5. Case Is >= 50 (token 44 + token 38)
+	appendU16(tokConstInt)
+	appendU16(50)
+	appendU16(tokCaseIsGte)
+	appendU16(tokCaseSingle)
+	appendU16(tokNL)
+
+	// 6. Case Else (token 37)
+	appendU16(tokCaseElse)
+	appendU16(tokNL)
+
+	// 7. End Select (token 58)
+	appendU16(tokEndSelect)
+	appendU16(tokNL)
+
+	// End of sub
+	appendU16(tokEOS)
+
+	proc := &pcode.Procedure{
+		Name:    "testSelectCase",
+		IsLocal: true,
+		Bytecode: bc,
+	}
+
+	d := pcode.NewDisassembler(nil)
+	code, err := d.DisassembleProcedure(proc)
+	if err != nil {
+		t.Fatalf("DisassembleProcedure failed: %v", err)
+	}
+
+	expectedSubstrings := []string{
+		"Select Case p0020",
+		"Case 42",
+		"Case 1 To 10",
+		"Case Is < 5",
+		"Case Is >= 50",
+		"Case Else",
+		"End Select",
+	}
+
+	for _, sub := range expectedSubstrings {
+		if !strings.Contains(code, sub) {
+			t.Errorf("Expected disassembled code to contain %q, but got:\n%s", sub, code)
+		}
+	}
+
+	// Verify no orphan lines with literal values exist
+	for idx, line := range strings.Split(code, "\n") {
+		trimmed := strings.TrimSpace(line)
+		for _, forbidden := range []string{"1", "10", "42", "5", "50"} {
+			if trimmed == forbidden {
+				t.Errorf("Line %d: unexpected orphan literal %q:\n%s", idx+1, forbidden, code)
+			}
+		}
+	}
+}
+
+// TestSelectCasePartialStack verifies that Token 39 gracefully handles an underflow/partial stack.
+func TestSelectCasePartialStack(t *testing.T) {
+	tbl := pcode.GetOpcodeTable()
+	getPToken := func(tokenID uint16) uint16 {
+		for pTok := uint16(1); pTok < 0xFFFF; pTok += 3 {
+			info, _ := tbl.Lookup(pTok)
+			if info != nil && info.TokenID == tokenID {
+				return pTok
+			}
+		}
+		t.Fatalf("No pToken found for TokenID %d", tokenID)
+		return 0
+	}
+
+	tokConstInt := getPToken(229) // c%
+	tokCaseRange := getPToken(39) // Case (range)
+	tokNL := getPToken(0)
+	tokEOS := getPToken(9)
+
+	// Only 1 item on stack when Token 39 executes
+	var bc []byte
+	appendU16 := func(val uint16) {
+		bc = append(bc, byte(val), byte(val>>8))
+	}
+	appendU16(tokConstInt)
+	appendU16(99)
+	appendU16(tokCaseRange)
+	appendU16(tokNL)
+	appendU16(tokEOS)
+
+	proc := &pcode.Procedure{
+		Name:    "testPartialStack",
+		IsLocal: true,
+		Bytecode: bc,
+	}
+
+	d := pcode.NewDisassembler(nil)
+	code, err := d.DisassembleProcedure(proc)
+	if err != nil {
+		t.Fatalf("DisassembleProcedure failed: %v", err)
+	}
+
+	if !strings.Contains(code, "Case 99") {
+		t.Errorf("Expected graceful fallback to 'Case 99', got:\n%s", code)
+	}
+}
+
+
+
