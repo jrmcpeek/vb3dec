@@ -43,6 +43,9 @@ type Procedure struct {
 	AliasName   string         // Dynamically resolved alias for external declarations (e.g. "FindChildByClass")
 	ParamByVal  map[int]bool   // 0-based parameter index -> true if ByVal
 	ParamTypes  map[int]string // 0-based parameter index -> inferred parameter type
+	// ExternParams is the parameter list of an external declaration, inferred
+	// from its call sites (nil if it is never called).
+	ExternParams []string
 }
 
 // IsFunction reports whether the descriptor carries a return type.
@@ -207,8 +210,10 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 		procCount := binary.LittleEndian.Uint16(descBytes[26:28])
 		nextMod := binary.LittleEndian.Uint16(descBytes[30:32])
 
-		// Skip project root descriptor (has 0 procedures)
-		if procCount == 0 && modIndex == 1 {
+		// Skip the project root descriptor at the head of the chain. Other
+		// modules without procedures (e.g. declaration-only code modules) are
+		// kept: they own module data blocks.
+		if procCount == 0 && currModPtr == modPtr {
 			currModPtr = nextMod
 			continue
 		}
@@ -702,7 +707,6 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 	// 2. Read Global Arrays table immediately following SomeDataBuff
 	afterSomeData := gv0B8E + gv09B6
 	globalDecls := make(map[uint16]string)
-	isGlobalArray := make(map[uint16]bool)
 
 	if afterSomeData+6 <= len(data2) {
 		arrCount := int(binary.LittleEndian.Uint16(data2[afterSomeData+2 : afterSomeData+4]))
@@ -742,25 +746,9 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 				}
 				decl := fmt.Sprintf("Global gv%04X(%s) As %s", arrOff, strings.Join(dims, ", "), typ)
 				globalDecls[arrOff] = decl
-				isGlobalArray[arrOff] = true
 				proj.GlobalVarMap[arrOff] = fmt.Sprintf("gv%04X", arrOff)
 			}
 		}
-	}
-
-	// Scalar global definitions
-	scalarOffsets := []uint16{0x0020, 0x0024, 0x002A}
-	for off := uint16(0x0104); off <= 0x0128; off += 4 {
-		scalarOffsets = append(scalarOffsets, off)
-	}
-	for _, off := range scalarOffsets {
-		gvName := fmt.Sprintf("gv%04X", off)
-		typ := "String"
-		if off == 0x0024 {
-			typ = "Integer"
-		}
-		globalDecls[off] = fmt.Sprintf("Global %s As %s", gvName, typ)
-		proj.GlobalVarMap[off] = gvName
 	}
 
 	// 3. Scan modBytes for each module:
@@ -775,7 +763,12 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 	}
 
 	curr := gfrmOffset
-	for modIdx := 0; modIdx < len(proj.Modules) && curr+4 <= len(data2); modIdx++ {
+	// Module data blocks are identified by module descriptor pointer.
+	modByID := make(map[uint16]*Module)
+	for _, m := range proj.Modules {
+		modByID[m.ID] = m
+	}
+	for assigned := 0; assigned < len(proj.Modules) && curr+4 <= len(data2); {
 		hdr := binary.LittleEndian.Uint16(data2[curr : curr+2])
 		curr += 2
 		if hdr == 0 || hdr == 0xFFFF {
@@ -789,7 +782,14 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 		modBytes := data2[curr : curr+modDataLen]
 		curr += modDataLen
 
-		mod := proj.Modules[modIdx]
+		mod := modByID[hdr]
+		if mod == nil {
+			// Not a decompiled module; decode into a scratch module so its
+			// fixup blocks are still consumed.
+			mod = &Module{ID: hdr, ControlMap: make(map[uint16]string)}
+		} else {
+			assigned++
+		}
 		mod.ModBytes = modBytes
 
 		// 3a. First scan form/module instance tags (0x8048..0x805A, 0x8034)
@@ -834,14 +834,6 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 				mod.ControlMap[slot] = proc.DeclaredName()
 			} else if proc, ok := proj.ProcByPtr[w&^1]; ok && callSlots[slot] {
 				mod.ControlMap[slot] = proc.DeclaredName()
-			} else if gvName, ok := proj.GlobalVarMap[w]; ok {
-				if isGlobalArray[w] {
-					if b+4 <= len(modBytes) && (binary.LittleEndian.Uint16(modBytes[b+2:b+4])&0xFF00) == 0x4000 {
-						mod.ControlMap[slot] = gvName
-					}
-				} else {
-					mod.ControlMap[slot] = gvName
-				}
 			}
 		}
 
@@ -878,6 +870,8 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 			}
 		}
 	}
+
+	resolveGlobalVariables(proj, globalDecls)
 
 	// Populate proj.GlobalVars sorted by offset
 	var sortedOffsets []int
@@ -973,9 +967,67 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 	}
 }
 
-// ctlKindCall is the control-token kind (iToken2) of a var() reference that
-// calls a procedure; array element references have kind 10.
-const ctlKindCall = 12
+// Control-token kinds (iToken2) of variable references that are not data
+// types: address-of (passing a variable ByRef; a 4-byte value read in mode
+// ctlModeValue4), object references, array elements and procedure calls.
+// Kinds 1..7 are the data types of DataTypes.
+const (
+	ctlKindAddress = 8
+	ctlKindObject  = 9
+	ctlKindArray   = 10
+	ctlKindCall    = 12
+)
+
+// Control-token addressing modes (iToken1) of variable references.
+const (
+	ctlModeGlobal      = 10 // Slot holds an offset into the global data area
+	ctlModeArrayHeader = 12 // Whole-array reference (ReDim, Erase); scope follows the slot
+	ctlModeValue4      = 14 // 4-byte value of a local
+)
+
+// walkInstructions decodes a procedure's instruction stream, calling fn with
+// each instruction's token, opcode and parameter words.
+func walkInstructions(bc []byte, tbl *OpcodeTable, fn func(tok uint16, info *OpcodeInfo, params []uint16)) {
+	for pc := 0; pc+2 <= len(bc); {
+		tok := binary.LittleEndian.Uint16(bc[pc : pc+2])
+		pc += 2
+		info, _ := tbl.Lookup(tok)
+		if info == nil {
+			continue
+		}
+		if info.Case == 8 {
+			if pc+2 > len(bc) {
+				return
+			}
+			pc += int(binary.LittleEndian.Uint16(bc[pc:pc+2])) + 2
+			continue
+		}
+		if info.Case == 13 {
+			if pc+2 > len(bc) {
+				return
+			}
+			pc += 2 + int(binary.LittleEndian.Uint16(bc[pc:pc+2]))/2*2
+			continue
+		}
+		var params []uint16
+		for i := 0; i < info.NumParams && pc+2 <= len(bc); i++ {
+			params = append(params, binary.LittleEndian.Uint16(bc[pc:pc+2]))
+			pc += 2
+		}
+		fn(tok, info, params)
+	}
+}
+
+// varSlot returns the module data slot referenced by a variable instruction.
+func varSlot(info *OpcodeInfo, params []uint16) (uint16, bool) {
+	if !strings.HasPrefix(info.Keyword, "var") || len(params) == 0 {
+		return 0, false
+	}
+	if (info.Keyword == "var()" || info.Keyword == "var()=") && len(params) >= 2 {
+		return params[1], true
+	}
+	return params[0], true
+}
 
 // callTargetSlots returns the module data slots that the module's procedures
 // call through.
@@ -983,37 +1035,116 @@ func callTargetSlots(mod *Module) map[uint16]bool {
 	tbl := GetOpcodeTable()
 	slots := make(map[uint16]bool)
 	for _, p := range mod.Procedures {
-		bc := p.Bytecode
-		for pc := 0; pc+2 <= len(bc); {
-			tok := binary.LittleEndian.Uint16(bc[pc : pc+2])
-			pc += 2
-			info, _ := tbl.Lookup(tok)
-			if info == nil {
-				continue
+		walkInstructions(p.Bytecode, tbl, func(tok uint16, info *OpcodeInfo, params []uint16) {
+			if info.Keyword != "var()" || len(params) < 2 {
+				return
 			}
-			if info.Case == 8 {
-				if pc+2 > len(bc) {
-					break
-				}
-				pc += int(binary.LittleEndian.Uint16(bc[pc:pc+2])) + 2
-				continue
+			if _, _, kind := tbl.LookupControl(tok); kind == ctlKindCall {
+				slots[params[1]] = true
 			}
-			if info.Case == 13 {
-				if pc+2 > len(bc) {
-					break
-				}
-				pc += 2 + int(binary.LittleEndian.Uint16(bc[pc:pc+2]))/2*2
-				continue
-			}
-			if info.Keyword == "var()" && info.NumParams >= 2 && pc+4 <= len(bc) {
-				if _, _, kind := tbl.LookupControl(tok); kind == ctlKindCall {
-					slots[binary.LittleEndian.Uint16(bc[pc+2:pc+4])] = true
-				}
-			}
-			pc += 2 * info.NumParams
-		}
+		})
 	}
 	return slots
+}
+
+// globalVar accumulates what the code reveals about one global variable.
+type globalVar struct {
+	typeVotes map[byte]int // data type kind -> number of accesses
+	isArray   bool
+	elemType  uint16 // array element type word (0xC000 | type)
+}
+
+// resolveGlobalVariables names the global variables referenced by every
+// module and adds a declaration for each one that globalDecls (the static
+// arrays) does not already declare. A variable reference whose addressing mode
+// is global holds the variable's offset in the global data area; its data
+// type is the reference's kind. An array reference slot is followed by the
+// dimension word and the element type word.
+func resolveGlobalVariables(proj *Project, globalDecls map[uint16]string) {
+	tbl := GetOpcodeTable()
+	vars := make(map[uint16]*globalVar)
+	headerSlots := make(map[*Module]map[uint16]bool)
+
+	for _, m := range proj.Modules {
+		mb := m.ModBytes
+		for _, p := range m.Procedures {
+			walkInstructions(p.Bytecode, tbl, func(tok uint16, info *OpcodeInfo, params []uint16) {
+				slot, ok := varSlot(info, params)
+				if !ok || int(slot)+2 > len(mb) {
+					return
+				}
+				_, mode, kind := tbl.LookupControl(tok)
+				if mode == ctlModeArrayHeader {
+					if headerSlots[m] == nil {
+						headerSlots[m] = make(map[uint16]bool)
+					}
+					headerSlots[m][slot] = true
+					return
+				}
+				if mode != ctlModeGlobal || kind == ctlKindObject || kind == ctlKindCall {
+					return
+				}
+				if _, mapped := m.ControlMap[slot]; mapped && !strings.HasPrefix(m.ControlMap[slot], "gv") {
+					return // form, control or procedure reference
+				}
+				off := binary.LittleEndian.Uint16(mb[slot : slot+2])
+				g := vars[off]
+				if g == nil {
+					g = &globalVar{typeVotes: make(map[byte]int)}
+					vars[off] = g
+				}
+				switch {
+				case kind == ctlKindArray:
+					g.isArray = true
+					if int(slot)+6 <= len(mb) {
+						g.elemType = binary.LittleEndian.Uint16(mb[slot+4 : slot+6])
+					}
+				case kind >= 1 && kind <= 7:
+					g.typeVotes[kind]++
+				}
+				m.ControlMap[slot] = fmt.Sprintf("gv%04X", off)
+			})
+		}
+	}
+
+	// Whole-array references to a global array use the same slot layout.
+	for m, slots := range headerSlots {
+		for slot := range slots {
+			if _, mapped := m.ControlMap[slot]; mapped || int(slot)+2 > len(m.ModBytes) {
+				continue
+			}
+			off := binary.LittleEndian.Uint16(m.ModBytes[slot : slot+2])
+			if g, ok := vars[off]; ok && g.isArray {
+				m.ControlMap[slot] = fmt.Sprintf("gv%04X", off)
+			}
+		}
+	}
+
+	for off, g := range vars {
+		name := fmt.Sprintf("gv%04X", off)
+		proj.GlobalVarMap[off] = name
+		if _, declared := globalDecls[off]; declared {
+			continue
+		}
+		if g.isArray {
+			typ := DataTypes[g.elemType&0x7]
+			if typ == "" {
+				typ = "Variant"
+			}
+			// Static arrays are listed in the global arrays table; any other
+			// global array is dynamic and dimensioned with ReDim.
+			globalDecls[off] = fmt.Sprintf("Global %s() As %s", name, typ)
+			continue
+		}
+		typ := "Variant"
+		best := 0
+		for kind := byte(1); kind <= 7; kind++ {
+			if n := g.typeVotes[kind]; n > best {
+				best, typ = n, DataTypes[uint16(kind)]
+			}
+		}
+		globalDecls[off] = fmt.Sprintf("Global %s As %s", name, typ)
+	}
 }
 
 // parseModuleVarBounds parses array dimensions and type from modBytes at var offset off
@@ -1109,7 +1240,11 @@ func resolveByValParameters(proj *Project) error {
 	type stackItem struct {
 		isByVal  bool
 		typeName string
+		coerced  string // Type the value was coerced to (C<typ>), if known
+		byRef    bool   // Address of a variable (passed ByRef)
+		cString  bool   // String passed to an external procedure ByVal
 	}
+	externCalls := make(map[*Procedure][]externCall)
 
 	for _, mod := range proj.Modules {
 		for _, caller := range mod.Procedures {
@@ -1120,6 +1255,7 @@ func resolveByValParameters(proj *Project) error {
 			pc := 0
 
 			var stack []stackItem
+			argBytes := -1 // Argument bytes of the external call being set up
 
 			for pc < len(bc) {
 				if pc+2 > len(bc) {
@@ -1191,6 +1327,14 @@ func resolveByValParameters(proj *Project) error {
 				case info.Case == 5 || kw == "nl" || info.Case == 4 || kw == "eos":
 					stack = stack[:0]
 
+				case token == tokExternArgBytes && len(params) == 1:
+					argBytes = int(params[0])
+
+				case token == tokByValString:
+					if len(stack) > 0 {
+						stack[len(stack)-1].cString = true
+					}
+
 				case token == 0x6A63 || token == 0x6A02:
 					if len(stack) > 0 {
 						stack[len(stack)-1].isByVal = true
@@ -1231,6 +1375,18 @@ func resolveByValParameters(proj *Project) error {
 					argItems = append(argItems, stack[len(stack)-take:]...)
 					stack = stack[:len(stack)-take]
 
+					if targetProc != nil && !targetProc.IsLocal {
+						call := externCall{argBytes: argBytes}
+						for _, item := range argItems {
+							typ := item.coerced
+							if typ == "" {
+								typ = item.typeName
+							}
+							call.args = append(call.args, externArg{byRef: item.byRef, byValString: item.cString, typ: typ})
+						}
+						externCalls[targetProc] = append(externCalls[targetProc], call)
+						argBytes = -1
+					}
 					if targetProc != nil && targetProc.IsLocal {
 						if procRecords[targetProc] == nil {
 							procRecords[targetProc] = make(map[int]*paramCallRecord)
@@ -1259,9 +1415,20 @@ func resolveByValParameters(proj *Project) error {
 					}
 					stack = append(stack, stackItem{typeName: retTypeName})
 
+				case kw == "C<typ>":
+					if len(stack) > 0 {
+						stack[len(stack)-1].coerced = coercionTargets[token]
+					}
+
 				case kw == "var" || kw == "pop.var":
 					var tName string
-					_, _, iToken2 := tbl.LookupControl(token)
+					_, iToken1, iToken2 := tbl.LookupControl(token)
+					if iToken2 == ctlKindAddress {
+						// Mode 14 reads a 4-byte value (Long or Single);
+						// otherwise the variable's address is pushed.
+						stack = append(stack, stackItem{byRef: iToken1 != ctlModeValue4})
+						break
+					}
 					if iToken2 >= 1 && iToken2 <= 7 {
 						tName = DataTypes[uint16(iToken2)]
 					} else {
@@ -1298,6 +1465,10 @@ func resolveByValParameters(proj *Project) error {
 							stack[len(stack)-1] = stackItem{typeName: "String"}
 						}
 					case "+", "-", "*", "/", "\\", "Mod", "=", "<>", "<", ">", "<=", ">=", "And", "Or", "Xor", "Eqv", "Imp":
+						if kw == "-" && altToken&0x01FF == altUnaryMinus {
+							// Negation keeps the operand's type.
+							break
+						}
 						if len(stack) >= 2 {
 							t1 := stack[len(stack)-1].typeName
 							stack = stack[:len(stack)-1]
@@ -1332,5 +1503,154 @@ func resolveByValParameters(proj *Project) error {
 			}
 		}
 	}
+
+	for proc, calls := range externCalls {
+		proc.ExternParams = inferExternParams(calls)
+	}
 	return nil
+}
+
+// coercionTargets maps C<typ> coercion tokens to the type they convert to.
+// The tokens address conversion routines in VBRUN300.DLL; their targets were
+// established from the assignments that consume the converted value.
+var coercionTargets = map[uint16]string{
+	0x0E7B: "Long",    // from Integer
+	0x0EB0: "Variant", // from Integer
+	0x0EC5: "Integer",
+	0x0F1C: "Variant", // from Long
+	0x0F67: "Integer",
+	0x0F7B: "Long",
+	0x1050: "Integer", // from Variant
+	0x1060: "Long",    // from Variant
+	0x106D: "Single",
+	0x10A3: "String",  // from Variant
+	0x11C3: "Variant", // from String
+}
+
+// altUnaryMinus is the alternate token of the unary negation form of "-".
+const altUnaryMinus = 0x00F9
+
+// tokByValString converts the string on top of the stack into a ByVal
+// (null-terminated) string argument for an external procedure.
+const tokByValString = 0x1972
+
+// tokExternArgBytes sets up a call to an external procedure; its operand is
+// the number of argument bytes the call pushes.
+const tokExternArgBytes = 0x67EA
+
+// externCall is one call to an external procedure.
+type externCall struct {
+	args     []externArg
+	argBytes int // Bytes of arguments pushed, or -1 if unknown
+}
+
+// externArg describes how one call site passes one argument to an external
+// procedure.
+type externArg struct {
+	byRef       bool   // Address of a variable
+	byValString bool   // String converted to a ByVal C string
+	typ         string // Value type, or "" if unknown
+}
+
+// externArgSize returns the bytes an argument occupies on the stack, or 0 if
+// its type is unknown.
+func externArgSize(a externArg) int {
+	switch {
+	case a.byRef, a.byValString:
+		return 4 // far pointer
+	}
+	switch a.typ {
+	case "Integer":
+		return 2
+	case "Long", "Single":
+		return 4
+	case "Double", "Currency":
+		return 8
+	}
+	return 0
+}
+
+// onlyIntegersUnknown reports whether the arguments of unknown type in a call
+// account for exactly two bytes each; only Integer values are that size.
+func onlyIntegersUnknown(c externCall) bool {
+	if c.argBytes < 0 {
+		return false
+	}
+	known, unknown := 0, 0
+	for _, a := range c.args {
+		if sz := externArgSize(a); sz > 0 {
+			known += sz
+		} else {
+			unknown++
+		}
+	}
+	return unknown > 0 && c.argBytes-known == 2*unknown
+}
+
+// externTypeSuffix maps parameter types to Basic type-declaration characters.
+var externTypeSuffix = map[string]string{
+	"Integer":  "%",
+	"Long":     "&",
+	"Single":   "!",
+	"Double":   "#",
+	"Currency": "@",
+	"String":   "$",
+}
+
+// inferExternParams derives a Declare parameter list from the arguments of
+// every call to the declaration. VB3 does not keep Declare parameter lists in
+// compiled programs; each call site instead converts and pushes its arguments
+// as the declaration requires. A parameter is ByVal unless some call passes a
+// variable's address, and its type is the type the calls convert to. Returns
+// nil when the declaration is never called.
+func inferExternParams(calls []externCall) []string {
+	n := 0
+	for _, c := range calls {
+		if len(c.args) > n {
+			n = len(c.args)
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	params := make([]string, n)
+	for i := 0; i < n; i++ {
+		// Calls passing different types need an "As Any" parameter.
+		byRef := false
+		types := make(map[string]bool)
+		for _, c := range calls {
+			if i >= len(c.args) {
+				continue
+			}
+			a := c.args[i]
+			if a.typ == "" && !a.byRef && !a.byValString && onlyIntegersUnknown(c) {
+				a.typ = "Integer"
+			}
+			byRef = byRef || a.byRef
+			switch {
+			case a.byValString:
+				types["ByVal String"] = true
+			case a.typ != "" && a.typ != "Variant":
+				types[a.typ] = true
+			}
+		}
+		typ := ""
+		if len(types) == 1 {
+			for t := range types {
+				typ = t
+			}
+		}
+		name := fmt.Sprintf("p%d", i+1)
+		switch {
+		case byRef:
+			params[i] = name + " As Any"
+		case typ == "ByVal String":
+			params[i] = "ByVal " + name + "$"
+		case externTypeSuffix[typ] != "" && typ != "String":
+			params[i] = "ByVal " + name + externTypeSuffix[typ]
+		default:
+			params[i] = "ByVal " + name + " As Any"
+		}
+	}
+	return params
 }

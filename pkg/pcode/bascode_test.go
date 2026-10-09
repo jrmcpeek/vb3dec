@@ -80,7 +80,7 @@ func TestBascodeFormCode(t *testing.T) {
 		}
 	}
 
-	// Module2 indexes a module-level array whose descriptor word coincides
+	// Module2 indexes a global array whose descriptor word coincides
 	// with an API declaration's pointer; it must not decompile as a call.
 	code, err = d.DisassembleModule(module2)
 	if err != nil {
@@ -89,7 +89,56 @@ func TestBascodeFormCode(t *testing.T) {
 	if strings.Contains(code, "extfn") {
 		t.Errorf("Module2 code references an external declaration it never calls")
 	}
-	if !strings.Contains(code, "m0018(l0054, 1)") {
-		t.Errorf("Module2 code is missing the array access m0018(l0054, 1)")
+	if !strings.Contains(code, "gv01A8(l0054, 1)") {
+		t.Errorf("Module2 code is missing the array access gv01A8(l0054, 1)")
+	}
+}
+
+func TestBascodeGlobalsAndDeclarations(t *testing.T) {
+	proj := parseBascode(t)
+	globals := strings.Join(proj.GlobalVars, "\n")
+	for _, want := range []string{
+		"Global gv0162 As String",
+		"Global gv01A8() As String", // ReDim'd by Module2
+		"Global gv01DC As Integer",
+	} {
+		if !strings.Contains(globals, want) {
+			t.Errorf("missing %q in globals:\n%s", want, globals)
+		}
+	}
+	if strings.Contains(globals, "gv0020") {
+		t.Errorf("globals contain an offset BASCODE never references:\n%s", globals)
+	}
+
+	d := pcode.NewDisassembler(proj)
+	code, err := d.DisassembleModule(proj.Modules[0])
+	if err != nil {
+		t.Fatalf("DisassembleModule(Module1): %v", err)
+	}
+	for _, want := range []string{
+		`Declare Function extfn00D7 Lib "user" Alias "FindWindow" (ByVal p1$, ByVal p2$) As Integer`,
+		`Declare Function extfn0080 Lib "Kernel" Alias "GetModuleFileName" (ByVal p1%, ByVal p2$, ByVal p3%) As Integer`,
+		`Declare Function extfn00E5 Lib "user" Alias "SendMessage" (ByVal p1%, ByVal p2%, ByVal p3%, p4 As Any) As Long`,
+		`Declare Function extfn00CB Lib "user" Alias "GetFocus" () As Integer`,
+	} {
+		if !strings.Contains(code, want) {
+			t.Errorf("Module1 is missing %q", want)
+		}
+	}
+}
+
+func TestBascodeUnloadEventParameter(t *testing.T) {
+	// big's Form_Unload never reads Cancel (BP+6); its locals and globals
+	// must keep their own names.
+	proj := parseBascode(t)
+	d := pcode.NewDisassembler(proj)
+	code, err := d.DisassembleModule(proj.Modules[3])
+	if err != nil {
+		t.Fatalf("DisassembleModule(big): %v", err)
+	}
+	unload := code[strings.Index(code, "Sub Form_Unload (Cancel As Integer)"):]
+	unload = unload[:strings.Index(unload, "End Sub")]
+	if !strings.Contains(unload, "If gv01DC = 1 Then Exit Sub") || !strings.Contains(unload, "l00BA$ = big.Combo1.Text") {
+		t.Errorf("unexpected Form_Unload body:\n%s", unload)
 	}
 }

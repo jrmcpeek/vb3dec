@@ -1067,37 +1067,6 @@ func (d *Disassembler) DisassembleFormCode(mod *Module) (string, error) {
 	return sb.String(), nil
 }
 
-func formatExternalParams(p *Procedure, alias string) string {
-	switch alias {
-	case "FindChildByClass", "FindChildByTitle":
-		return "ByVal p1%, ByVal p2$"
-	case "Findwindow":
-		return "ByVal p1 As Any, ByVal p2 As Any"
-	case "GetCurrentDirectory", "GetMenu", "GetMenuItemCount", "GetMenuItemID", "GetMenuString", "GetSubMenu", "ptGetStringFromAddress":
-		return ""
-	case "getnextwindow":
-		return "ByVal p1%, ByVal p2%"
-	case "GetParent", "getwindowtextlength":
-		return "ByVal p1%"
-	case "getwindowtext":
-		return "ByVal p1%, ByVal p2$, ByVal p3%"
-	case "SendMessage":
-		if p.NameID == 0x0221 {
-			return "ByVal p1%, ByVal p2%, ByVal p3%, ByVal p4$"
-		}
-		return "ByVal p1%, ByVal p2%, ByVal p3%, ByVal p4&"
-	case "setwindowpos":
-		return "ByVal p1%, ByVal p2%, ByVal p3%, ByVal p4%, ByVal p5%, ByVal p6%, ByVal p7%"
-	default:
-		cnt := int(p.PubOrPriv >> 9)
-		var list []string
-		for i := 1; i <= cnt; i++ {
-			list = append(list, fmt.Sprintf("ByVal p%d%%", i))
-		}
-		return strings.Join(list, ", ")
-	}
-}
-
 func (d *Disassembler) formatDeclaration(p *Procedure) string {
 	procType := "Sub"
 	retType := ""
@@ -1121,12 +1090,12 @@ func (d *Disassembler) formatDeclaration(p *Procedure) string {
 
 	aliasClause := ""
 	if alias != "" && alias != name {
-		aliasClause = fmt.Sprintf(" Alias %q", alias)
+		aliasClause = " Alias " + win1252.QuoteVBString(alias)
 	}
 
-	params := formatExternalParams(p, alias)
+	params := strings.Join(p.ExternParams, ", ")
 
-	return fmt.Sprintf("Declare %s %s Lib %q%s (%s)%s", procType, name, lib, aliasClause, params, retType)
+	return fmt.Sprintf("Declare %s %s Lib %s%s (%s)%s", procType, name, win1252.QuoteVBString(lib), aliasClause, params, retType)
 }
 
 func (d *Disassembler) formatEmptyProcedure(p *Procedure) string {
@@ -1386,13 +1355,15 @@ func (s *procDisasmState) getVarName(offset uint16) string {
 
 	var name string
 	isEvent := strings.Contains(s.proc.Name, "_")
+	var modBytes []byte
+	if s.proc != nil && s.proj != nil && s.proc.ModuleIndex > 0 && s.proc.ModuleIndex <= len(s.proj.Modules) {
+		modBytes = s.proj.Modules[s.proc.ModuleIndex-1].ModBytes
+	}
+	// Global variables are named through the module's ControlMap; any other
+	// slot is a parameter or local of this procedure.
 	if isEvent {
 		name = fmt.Sprintf("l%04X", offset)
-	} else if offset >= 0x0010 && offset < 0x0500 {
-		var modBytes []byte
-		if s.proc != nil && s.proj != nil && s.proc.ModuleIndex > 0 && s.proc.ModuleIndex <= len(s.proj.Modules) {
-			modBytes = s.proj.Modules[s.proc.ModuleIndex-1].ModBytes
-		}
+	} else if (offset >= 0x0010 && offset < 0x0500) || int(offset)+2 <= len(modBytes) {
 		if len(modBytes) > 0 && int(offset)+2 <= len(modBytes) {
 			bp := int16(binary.LittleEndian.Uint16(modBytes[offset : offset+2]))
 			if bp >= 6 && bp%2 == 0 && bp <= 60 {
@@ -1575,6 +1546,7 @@ func (s *procDisasmState) scanPass() {
 	// Classify parameter variables:
 	isEvent := strings.Contains(s.proc.Name, "_")
 	numParams := int(s.proc.PubOrPriv >> 9)
+	declaredParams := numParams
 	var evParams []eventParamDef
 	if isEvent {
 		evSuffix := s.proc.Name[strings.LastIndex(s.proc.Name, "_")+1:]
@@ -1605,9 +1577,24 @@ func (s *procDisasmState) scanPass() {
 			}
 		}
 		if isEvent {
-			if paramCount < len(evParams) && v >= 0x0010 && v < 0x0500 {
-				s.vars[v] = evParams[paramCount].Name
-				s.recordVarTypeByOffset(v, evParams[paramCount].Type)
+			// Event parameters are passed ByRef as far pointers in Pascal
+			// order, so parameter i of n is at BP + 6 + 4*(n-1-i). When the
+			// descriptor's parameter count disagrees with the event's, the
+			// event name is unreliable; assign names in slot order instead.
+			paramIdx := -1
+			if declaredParams != len(evParams) {
+				if paramCount < len(evParams) && v >= 0x0010 && v < 0x0500 {
+					paramIdx = paramCount
+				}
+			} else if len(modBytes) > 0 && int(v)+2 <= len(modBytes) {
+				bp := int(int16(binary.LittleEndian.Uint16(modBytes[v : v+2])))
+				if rel := bp - 6; rel >= 0 && rel%4 == 0 && rel/4 < len(evParams) {
+					paramIdx = len(evParams) - 1 - rel/4
+				}
+			}
+			if paramIdx >= 0 {
+				s.vars[v] = evParams[paramIdx].Name
+				s.recordVarTypeByOffset(v, evParams[paramIdx].Type)
 				paramCount++
 			} else {
 				_ = s.getVarName(v)
@@ -2202,8 +2189,7 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 
 	case kw == "-":
 		// Unary minus vs Binary subtraction
-		// AltToken 0x00F9 is specifically unary negation.
-		if (altToken&0x01FF) == 0x00F9 || len(s.stack) == 1 || s.prevOpWas {
+		if (altToken&0x01FF) == altUnaryMinus || len(s.stack) == 1 || s.prevOpWas {
 			val := s.pop()
 			if val == "" {
 				val = "0"
