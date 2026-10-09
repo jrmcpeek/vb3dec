@@ -1,14 +1,14 @@
 package ne_test
 
 import (
-	"path/filepath"
 	"testing"
 
+	"vb3dec/internal/fixture"
 	"vb3dec/pkg/ne"
 )
 
 func TestResourceTable(t *testing.T) {
-	exePath := filepath.Join("..", "..", "test_input", "FF.EXE")
+	exePath := fixture.Path(t, fixture.FF, "FF.EXE")
 	f, err := ne.Open(exePath)
 	if err != nil {
 		t.Fatalf("Failed to open %s: %v", exePath, err)

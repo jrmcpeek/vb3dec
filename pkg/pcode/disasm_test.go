@@ -3,11 +3,11 @@ package pcode_test
 import (
 	"encoding/binary"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
+	"vb3dec/internal/fixture"
 	"vb3dec/pkg/frm"
 	"vb3dec/pkg/ne"
 	"vb3dec/pkg/pcode"
@@ -15,7 +15,7 @@ import (
 
 func getTestProject(t *testing.T) (*ne.File, *pcode.Project) {
 	t.Helper()
-	exePath := filepath.Join("..", "..", "test_input", "FF.EXE")
+	exePath := fixture.Path(t, fixture.FF, "FF.EXE")
 	f, err := ne.Open(exePath)
 	if err != nil {
 		t.Fatalf("Failed to open test NE executable %s: %v", exePath, err)

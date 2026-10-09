@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,14 +22,26 @@ type stringMatch struct {
 }
 
 func main() {
-	targets := []string{
-		filepath.Join("test_input", "FF.EXE"),
-		filepath.Join("test_input", "FF.DLL"),
+	keywordsFlag := flag.String("k", "", "Comma-separated keywords to search for (case-insensitive)")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s -k <keyword,...> <ne-file>...\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(os.Stderr, "Prints the NE segment table of each file and locates the keywords in it.\n\n")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+
+	var keywords []string
+	for _, kw := range strings.Split(*keywordsFlag, ",") {
+		if kw = strings.TrimSpace(kw); kw != "" {
+			keywords = append(keywords, kw)
+		}
+	}
+	if len(keywords) == 0 || flag.NArg() == 0 {
+		flag.Usage()
+		os.Exit(2)
 	}
 
-	keywords := []string{"mimic", "morph", "esper"}
-
-	for _, target := range targets {
+	for _, target := range flag.Args() {
 		if err := inspectBinary(target, keywords); err != nil {
 			fmt.Fprintf(os.Stderr, "Error inspecting %s: %v\n", target, err)
 			os.Exit(1)

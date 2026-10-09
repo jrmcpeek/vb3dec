@@ -70,6 +70,8 @@ type Module struct {
 	ControlMap     map[uint16]string // Data segment offset -> control name or form name
 	ControlTypes   map[string]string // Control name -> type name (e.g. "control4" -> "ComboBox")
 	ControlByIndex map[int]string    // 1-based control index -> control name (e.g. 1 -> "control1")
+	FileName       string            // Form file name for form modules (e.g. "FRM1.FRM")
+	FormResourceID uint16            // RT_RCDATA ID of the form stream for form modules
 	ModuleVars     []string          // Module-level variable declarations (e.g. "Dim m001E As Integer")
 	ModBytes       []byte            // Raw module data bytes from RT_RCDATA 2
 }
@@ -83,6 +85,7 @@ type Project struct {
 	ProcByPtr    map[uint16]*Procedure // Procedure lookup by pointer / descriptor offset
 	GlobalVars   []string              // Project-wide global variable declarations (e.g. "Global gv0006(1 To 30, 1 To 2) As String")
 	GlobalVarMap map[uint16]string     // Global offset in SomeDataBuff -> variable name (e.g. 0x0006 -> "gv0006")
+	FormTags     map[byte]string       // Form instance tag -> form name
 }
 
 // ParseProject scans the NE executable for VB3 procedure descriptors, module tables,
@@ -166,8 +169,20 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 		}
 	}
 
+	// Form records in the project directory identify each form's code module.
+	var formByModule map[uint16]frm.FormRef
+	formTags := make(map[byte]string)
+	if info, err := frm.ParseVBProject(f); err == nil {
+		formByModule = make(map[uint16]frm.FormRef)
+		for _, fr := range info.Forms {
+			formByModule[fr.ModuleID] = fr
+			formTags[byte(fr.InstanceTag)] = fr.FormName
+		}
+	}
+
 	// 1. Discover all modules
 	var modules []*Module
+	codeModules := 0
 	modMap := make(map[uint16]*Module)
 	currModPtr := modPtr
 	modIndex := 1
@@ -198,25 +213,28 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 			continue
 		}
 
-		modName := fmt.Sprintf("Module%d", modIndex)
-		isForm := false
-		formIdx := 0
-
-		// In standard VB3: First module is Module1 (code module), remaining modules are Forms
-		if modIndex == 1 {
-			modName = "Module1"
-		} else {
-			isForm = true
-			formIdx = modIndex - 1
-			modName = fmt.Sprintf("frm%d", formIdx)
-		}
-
 		m := &Module{
-			Index:     modIndex,
-			ID:        modID,
-			Name:      modName,
-			IsForm:    isForm,
-			FormIndex: formIdx,
+			Index: modIndex,
+			ID:    modID,
+		}
+		if fr, ok := formByModule[modID]; ok {
+			// The project directory names the form whose code this module holds.
+			m.IsForm = true
+			m.FormIndex = fr.Index
+			m.Name = fr.FormName
+			m.FileName = fr.FileName
+			m.FormResourceID = fr.ResourceID
+		} else if formByModule == nil && modIndex > 1 {
+			// Without a project directory, assume the layout of a single code
+			// module followed by the forms in project order.
+			m.IsForm = true
+			m.FormIndex = modIndex - 1
+			m.Name = fmt.Sprintf("frm%d", m.FormIndex)
+			m.FileName = strings.ToUpper(m.Name) + ".FRM"
+			m.FormResourceID = uint16(m.FormIndex*2 + 2)
+		} else {
+			codeModules++
+			m.Name = fmt.Sprintf("Module%d", codeModules)
 		}
 		modules = append(modules, m)
 		modMap[modID] = m
@@ -227,6 +245,10 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 			break
 		}
 	}
+
+	// External declarations reference their library and entry point names by
+	// offset into the declaration string block of RT_RCDATA ID 2.
+	declStrBase, hasDeclStrings := declarationStringBase(data2)
 
 	// 2. Discover all procedures
 	var procs []*Procedure
@@ -289,26 +311,14 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 		}
 
 		var libName, aliasName string
-		if !isLocal {
+		if !isLocal && hasDeclStrings {
 			w20 := binary.LittleEndian.Uint16(descBytes[40:42])
 			w23 := binary.LittleEndian.Uint16(descBytes[46:48])
 			if w20 != 0 {
-				off := 0x01ED + int(w20)
-				if off < len(data2) {
-					sLen := int(data2[off])
-					if off+1+sLen <= len(data2) {
-						libName = strings.TrimSuffix(string(data2[off+1:off+1+sLen]), ".")
-					}
-				}
+				libName = strings.TrimSuffix(pascalStringAt(data2, declStrBase+int(w20)), ".")
 			}
 			if w23 != 0 {
-				off := 0x01ED + int(w23)
-				if off < len(data2) {
-					sLen := int(data2[off])
-					if off+1+sLen <= len(data2) {
-						aliasName = string(data2[off+1 : off+1+sLen])
-					}
-				}
+				aliasName = pascalStringAt(data2, declStrBase+int(w23))
 			}
 		}
 
@@ -354,6 +364,7 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 		Procedures:   procs,
 		ProcByPtr:    procByPtr,
 		GlobalVarMap: make(map[uint16]string),
+		FormTags:     formTags,
 	}
 
 	resolveControlTypes(f, proj, formOpts)
@@ -408,24 +419,7 @@ func resolveModuleEvents(f *ne.File, modules []*Module, procByPtr map[uint16]*Pr
 			continue
 		}
 
-		// Always map standard Form event NameIDs on any form
-		for _, p := range m.Procedures {
-			switch p.NameID {
-			case 0x04D1:
-				p.Name = "Form_Load"
-			case 0x04B2:
-				p.Name = "Form_Activate"
-			case 0x05CC:
-				p.Name = "Form_Unload"
-			case 0x04C3:
-				p.Name = "Form_Click"
-			case 0x0C68:
-				p.Name = "Form_DblClick"
-			}
-		}
-
-		resID := uint16(m.FormIndex*2 + 2)
-		entry, err := f.FindResource(ne.ResTypeRCData, resID)
+		entry, err := f.FindResource(ne.ResTypeRCData, m.FormResourceID)
 		if err != nil {
 			continue
 		}
@@ -621,6 +615,57 @@ func resolveModuleEvents(f *ne.File, modules []*Module, procByPtr map[uint16]*Pr
 	}
 }
 
+// declarationStringBase returns the base that external procedure descriptors
+// add to their library and alias offsets. RT_RCDATA ID 2 holds, from offset
+// 0x60, a length-prefixed block, a flags word, the length-prefixed global data
+// buffer and a length-prefixed fixup block; the declaration string block
+// follows, and descriptor offsets count from five bytes into it.
+func declarationStringBase(data2 []byte) (int, bool) {
+	word := func(pos int) (int, bool) {
+		if pos+2 > len(data2) {
+			return 0, false
+		}
+		return int(binary.LittleEndian.Uint16(data2[pos : pos+2])), true
+	}
+	pos := 0x60
+	n, ok := word(pos) // leading block
+	if !ok {
+		return 0, false
+	}
+	pos += 2 + n + 2            // block, then the flags word
+	if n, ok = word(pos); !ok { // global data buffer
+		return 0, false
+	}
+	pos += 2 + n
+	if n, ok = word(pos); !ok { // fixup block
+		return 0, false
+	}
+	pos += 2 + n
+	if pos+5 > len(data2) {
+		return 0, false
+	}
+	return pos + 5, true
+}
+
+// pascalStringAt returns the length-prefixed string at off, or "" if it is out of range.
+func pascalStringAt(data []byte, off int) string {
+	if off < 0 || off >= len(data) {
+		return ""
+	}
+	n := int(data[off])
+	if off+1+n > len(data) {
+		return ""
+	}
+	return string(data[off+1 : off+1+n])
+}
+
+// globalObjectTags maps the instance tags of VB3's global objects. Form
+// instance tags are listed in the project directory; these are not.
+var globalObjectTags = map[byte]string{
+	0x33: "Screen", // Identified from form-centering code (Screen.Height / 2 - Form.Height / 2)
+	0x34: "Clipboard",
+}
+
 func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 	proj.GlobalVarMap = make(map[uint16]string)
 
@@ -756,11 +801,9 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 					continue
 				}
 				tag := byte(w & 0x00FF)
-				var target string
-				if tag >= 'H' && tag <= 'Z' {
-					target = fmt.Sprintf("frm%d", int(tag-'H'+1))
-				} else if tag == 0x34 {
-					target = "Clipboard"
+				target := proj.FormTags[tag]
+				if target == "" {
+					target = globalObjectTags[tag]
 				}
 				if target != "" {
 					slot := uint16(b + 2)
@@ -770,6 +813,7 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 		}
 
 		// 3b. Map procedure call targets and global variables (do not overwrite form instances)
+		callSlots := callTargetSlots(mod)
 		for b := 0; b+2 <= len(modBytes); b += 2 {
 			slot := uint16(b)
 			if _, exists := mod.ControlMap[slot]; exists {
@@ -783,9 +827,12 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 				continue
 			}
 
-			if proc, ok := proj.ProcByPtr[w]; ok {
+			// Array descriptors and variables can hold values that coincide
+			// with procedure pointers, so only slots the code calls through
+			// are procedure references.
+			if proc, ok := proj.ProcByPtr[w]; ok && callSlots[slot] {
 				mod.ControlMap[slot] = proc.DeclaredName()
-			} else if proc, ok := proj.ProcByPtr[w&^1]; ok {
+			} else if proc, ok := proj.ProcByPtr[w&^1]; ok && callSlots[slot] {
 				mod.ControlMap[slot] = proc.DeclaredName()
 			} else if gvName, ok := proj.GlobalVarMap[w]; ok {
 				if isGlobalArray[w] {
@@ -924,6 +971,49 @@ func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
 		}
 		sort.Strings(m.ModuleVars)
 	}
+}
+
+// ctlKindCall is the control-token kind (iToken2) of a var() reference that
+// calls a procedure; array element references have kind 10.
+const ctlKindCall = 12
+
+// callTargetSlots returns the module data slots that the module's procedures
+// call through.
+func callTargetSlots(mod *Module) map[uint16]bool {
+	tbl := GetOpcodeTable()
+	slots := make(map[uint16]bool)
+	for _, p := range mod.Procedures {
+		bc := p.Bytecode
+		for pc := 0; pc+2 <= len(bc); {
+			tok := binary.LittleEndian.Uint16(bc[pc : pc+2])
+			pc += 2
+			info, _ := tbl.Lookup(tok)
+			if info == nil {
+				continue
+			}
+			if info.Case == 8 {
+				if pc+2 > len(bc) {
+					break
+				}
+				pc += int(binary.LittleEndian.Uint16(bc[pc:pc+2])) + 2
+				continue
+			}
+			if info.Case == 13 {
+				if pc+2 > len(bc) {
+					break
+				}
+				pc += 2 + int(binary.LittleEndian.Uint16(bc[pc:pc+2]))/2*2
+				continue
+			}
+			if info.Keyword == "var()" && info.NumParams >= 2 && pc+4 <= len(bc) {
+				if _, _, kind := tbl.LookupControl(tok); kind == ctlKindCall {
+					slots[binary.LittleEndian.Uint16(bc[pc+2:pc+4])] = true
+				}
+			}
+			pc += 2 * info.NumParams
+		}
+	}
+	return slots
 }
 
 // parseModuleVarBounds parses array dimensions and type from modBytes at var offset off
@@ -1127,16 +1217,19 @@ func resolveByValParameters(proj *Project) error {
 						targetProc = proj.ProcByPtr[slot]
 					}
 
-					var argItems []stackItem
-					for i := 0; i < numArgs; i++ {
-						if len(stack) > 0 {
-							val := stack[len(stack)-1]
-							stack = stack[:len(stack)-1]
-							argItems = append([]stackItem{val}, argItems...)
-						} else {
-							argItems = append([]stackItem{{}}, argItems...)
-						}
+					// Pop the arguments, padding missing leading ones. A
+					// whole-array reference (e.g. Erase) carries 0x8000 here,
+					// which is not an argument count.
+					take := numArgs
+					if take > len(stack) {
+						take = len(stack)
 					}
+					var argItems []stackItem
+					if numArgs < 0x8000 {
+						argItems = make([]stackItem, numArgs-take, numArgs)
+					}
+					argItems = append(argItems, stack[len(stack)-take:]...)
+					stack = stack[:len(stack)-take]
 
 					if targetProc != nil && targetProc.IsLocal {
 						if procRecords[targetProc] == nil {

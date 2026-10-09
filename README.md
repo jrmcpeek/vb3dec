@@ -96,6 +96,8 @@ Run the complete test suite:
 go test -v ./...
 ```
 
+Fixture-based tests read the sample programs in [`test_input/`](test_input/README.md) (one directory per sample: `ff/`, `bascode/`, `empire/`), which are supplied locally and not versioned. Tests open them only through `internal/fixture`.
+
 ---
 
 ## Usage
@@ -111,7 +113,7 @@ vb3dec [options] <path-to-vb3-exe> [output-dir]
 Decompile the bundled *Final Fantasy Extreme* test fixture into `out_decompiled/`:
 
 ```bash
-vb3dec test_input/FF.EXE out_decompiled
+vb3dec test_input/ff/FF.EXE out_decompiled
 ```
 
 ### Command-Line Options
@@ -141,12 +143,12 @@ To run or modify the decompiled application, open `<Project>.MAK` inside Microso
 
 ### Example Output
 
-Below is example console output from running `vb3dec` against `test_input/FF.EXE`:
+Below is example console output from running `vb3dec` against `test_input/ff/FF.EXE`:
 
 ```text
-$ vb3dec test_input/FF.EXE out_decompiled
+$ vb3dec test_input/ff/FF.EXE out_decompiled
 Visual Basic 3 Decompiler (vb3dec)
-Target: test_input/FF.EXE
+Target: test_input/ff/FF.EXE
 Output: out_decompiled
 
 Project Info:

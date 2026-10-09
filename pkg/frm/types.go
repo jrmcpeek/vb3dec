@@ -2,6 +2,8 @@ package frm
 
 import (
 	"fmt"
+
+	"vb3dec/pkg/vbx"
 )
 
 // Control types in VB3
@@ -25,8 +27,39 @@ const (
 	CtrlFileListBox   = "FileListBox"
 	CtrlMenu          = "Menu"
 	CtrlMDIForm       = "MDIForm"
+	CtrlLine          = "Line"
 	CtrlImage         = "Image"
 )
+
+// builtinModelNames maps a 1-byte control type ID to the default control name
+// of its VBRUN300.DLL model (the key into vbx.BuiltinModels).
+var builtinModelNames = map[byte]string{
+	0x00: "Picture",
+	0x01: "Label",
+	0x02: "Text",
+	0x03: "Frame",
+	0x04: "Command",
+	0x05: "Check",
+	0x06: "Option",
+	0x07: "Combo",
+	0x08: "List",
+	0x09: "HScroll",
+	0x0A: "VScroll",
+	0x0B: "Timer",
+	0x0D: "Form",
+	0x10: "Drive",
+	0x11: "Dir",
+	0x12: "File",
+	0x13: "Menu",
+	0x14: "MDIForm",
+	0x17: "Line",
+	0x18: "Image",
+}
+
+// builtinModel returns the property model for a built-in control type ID.
+func builtinModel(typeID byte) *vbx.Model {
+	return vbx.BuiltinModels[builtinModelNames[typeID]]
+}
 
 // BuiltinControlTypeName maps a 1-byte control type ID to its standard VB3 control type name.
 func BuiltinControlTypeName(typeID byte) string {
@@ -69,6 +102,8 @@ func BuiltinControlTypeName(typeID byte) string {
 		return CtrlMenu
 	case 0x14:
 		return CtrlMDIForm
+	case 0x17:
+		return CtrlLine
 	case 0x18:
 		return CtrlImage
 	default:
@@ -108,6 +143,7 @@ type Form struct {
 	Controls   []*ControlNode // Flat list of all child controls in stream order
 	FRXAssets  []FRXAsset     // Graphic assets belonging to this form
 	RawFRXData []byte         // Complete binary .FRX buffer
+	Warnings   []string       // Properties or controls that could not be decoded
 }
 
 // FormatEnumComment provides standard VB3 comments for enum properties.

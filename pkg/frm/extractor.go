@@ -17,6 +17,10 @@ type ExtractOptions struct {
 
 	// NameMaps optionally provides an in-memory map of formName -> (controlID -> controlName).
 	NameMaps map[string]map[int]string
+
+	// VBXDirs lists directories searched for the project's custom control
+	// (.VBX) files. Their models are needed to decode custom control properties.
+	VBXDirs []string
 }
 
 // ExtractedForm contains all outputs for an extracted form.
@@ -37,6 +41,8 @@ func ExtractForms(neFile *ne.File, opts ExtractOptions) ([]*ExtractedForm, *Proj
 	}
 
 	var results []*ExtractedForm
+	customModels, vbxWarnings := LoadCustomModels(proj.CustomVBXs, opts.VBXDirs)
+	proj.Warnings = append(proj.Warnings, vbxWarnings...)
 
 	for _, formRef := range proj.Forms {
 		entry, err := neFile.FindResource(ne.ResTypeRCData, formRef.ResourceID)
@@ -57,8 +63,11 @@ func ExtractForms(neFile *ne.File, opts ExtractOptions) ([]*ExtractedForm, *Proj
 		if nameMap == nil && opts.NamesDir != "" {
 			nameMap = loadNameMapFile(opts.NamesDir, formRef.FormName)
 		}
+		if nameMap == nil {
+			nameMap = formRef.ControlNames
+		}
 
-		form, rawFRX, err := DecodeFormStream(rawStream, formRef, nameMap)
+		form, rawFRX, err := DecodeFormStreamWithModels(rawStream, formRef, nameMap, customModels)
 		if err != nil {
 			return nil, proj, fmt.Errorf("decoding form %s (ID %d): %w", formRef.FormName, formRef.ResourceID, err)
 		}

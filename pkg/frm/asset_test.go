@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"vb3dec/internal/fixture"
 	"vb3dec/pkg/frm"
 	"vb3dec/pkg/ne"
 )
@@ -41,7 +42,7 @@ func TestDetectAssetFormat(t *testing.T) {
 }
 
 func TestExtractFRXAssetsFFExe(t *testing.T) {
-	exePath := filepath.Join("..", "..", "test_input", "FF.EXE")
+	exePath := fixture.Path(t, fixture.FF, "FF.EXE")
 	f, err := ne.Open(exePath)
 	if err != nil {
 		t.Fatalf("Open %s: %v", exePath, err)

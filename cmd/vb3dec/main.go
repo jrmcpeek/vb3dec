@@ -32,10 +32,11 @@ func main() {
 
 	flag.Parse()
 
-	targetExe := filepath.Join("test_input", "FF.EXE")
-	if flag.NArg() > 0 {
-		targetExe = flag.Arg(0)
+	if flag.NArg() < 1 || flag.NArg() > 2 {
+		flag.Usage()
+		os.Exit(2)
 	}
+	targetExe := flag.Arg(0)
 
 	outDir := *outDirFlag
 	if flag.NArg() > 1 {
@@ -72,14 +73,16 @@ func main() {
 	}
 	fmt.Printf("  Forms Found:     %d\n\n", len(proj.Forms))
 
+	extractOpts := frm.ExtractOptions{
+		NamesDir: *namesDirFlag,
+		VBXDirs:  []string{filepath.Dir(targetExe)},
+	}
+
 	var extracted []*frm.ExtractedForm
 	if *formsFlag {
-		opts := frm.ExtractOptions{
-			NamesDir: *namesDirFlag,
-		}
-
+		var extractedProj *frm.ProjectInfo
 		var err error
-		extracted, _, err = frm.ExtractForms(f, opts)
+		extracted, extractedProj, err = frm.ExtractForms(f, extractOpts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error extracting forms: %v\n", err)
 			os.Exit(1)
@@ -129,12 +132,26 @@ func main() {
 			}
 			fmt.Printf("Extracted %d standalone media asset files into: %s\n", totalAssets, targetAssetsDir)
 		}
+
+		var warnings []string
+		if extractedProj != nil {
+			warnings = append(warnings, extractedProj.Warnings...)
+		}
+		for _, ef := range extracted {
+			for _, w := range ef.Form.Warnings {
+				warnings = append(warnings, ef.Ref.FileName+": "+w)
+			}
+		}
+		if len(warnings) > 0 {
+			fmt.Printf("\nForm decoding warnings (%d):\n", len(warnings))
+			for _, w := range warnings {
+				fmt.Printf("  %s\n", w)
+			}
+		}
 	}
 
 	if *codeFlag {
-		pcodeProj, err := pcode.ParseProject(f, frm.ExtractOptions{
-			NamesDir: *namesDirFlag,
-		})
+		pcodeProj, err := pcode.ParseProject(f, extractOpts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing P-code structures: %v\n", err)
 			os.Exit(1)
@@ -184,9 +201,8 @@ func main() {
 				}
 
 				// If this is a form, also append code to the .FRM file (below End)
-				if mod.IsForm {
-					frmFileName := strings.ToUpper(mod.Name) + ".FRM"
-					frmPath := filepath.Join(outDir, frmFileName)
+				if mod.IsForm && mod.FileName != "" {
+					frmPath := filepath.Join(outDir, mod.FileName)
 					if data, err := os.ReadFile(frmPath); err == nil {
 						if !strings.Contains(string(data), "Sub ") && !strings.Contains(string(data), "Function ") {
 							formCode, err := d.DisassembleFormCode(mod)
@@ -266,8 +282,8 @@ func main() {
 			)
 			if proj.StartupIndex >= 0 && proj.StartupIndex < len(proj.Forms) {
 				makLines = append(makLines, "IconForm="+win1252.QuoteVBString(proj.Forms[proj.StartupIndex].FormName))
-			} else {
-				makLines = append(makLines, `IconForm="frm1"`)
+			} else if len(proj.Forms) > 0 {
+				makLines = append(makLines, "IconForm="+win1252.QuoteVBString(proj.Forms[0].FormName))
 			}
 			if proj.Title != "" {
 				makLines = append(makLines, "Title="+win1252.QuoteVBString(proj.Title))

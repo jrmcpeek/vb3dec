@@ -1,13 +1,14 @@
 package ne_test
 
 import (
-	"path/filepath"
 	"testing"
+
+	"vb3dec/internal/fixture"
 	"vb3dec/pkg/ne"
 )
 
 func TestParseFFExe(t *testing.T) {
-	path := filepath.Join("..", "..", "test_input", "FF.EXE")
+	path := fixture.Path(t, fixture.FF, "FF.EXE")
 	f, err := ne.Open(path)
 	if err != nil {
 		t.Fatalf("Failed to open FF.EXE: %v", err)
@@ -63,7 +64,7 @@ func TestParseFFExe(t *testing.T) {
 }
 
 func TestParseFFDll(t *testing.T) {
-	path := filepath.Join("..", "..", "test_input", "FF.DLL")
+	path := fixture.Path(t, fixture.FF, "FF.DLL")
 	f, err := ne.Open(path)
 	if err != nil {
 		t.Fatalf("Failed to open FF.DLL: %v", err)
