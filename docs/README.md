@@ -17,17 +17,17 @@ A deep-dive technical paper analyzing the internal architecture and failure mode
   - Eliminating opaque binary `.DAT` tables in favor of typed, native Go opcode tables.
 
 ### 2. [Known Limitations & Language Scope](limitations.md)
-A detailed breakdown of the boundaries of `vb3dec`'s current decompilation coverage and known non-implemented Visual Basic 3.0 language features.
+A detailed breakdown of the boundaries of `vb3dec`'s current decompilation coverage.
 - **Core topics covered**:
-  - Menu bar hierarchies (`Begin Menu`).
-  - Control arrays and `Index As Integer` event parameters.
+  - P-code statements without a decoder (`:`, `Call`, `On Error`, file I/O) and line labels.
   - User-Defined Types (`Type ... End Type` / UDTs).
-  - Data-bound controls and DAO / Jet database property serialization.
-  - Obscure / legacy control structures (`GoSub ... Return`, `On <n> GoTo`).
-  - Scope boundaries (16-bit NE vs 32-bit PE).
+  - Control types without a type ID mapping (`Shape`, `Data`) and untested paths (menus, control types absent from the samples).
+  - Control arrays and `Index As Integer` event parameters.
+  - Information compiled executables do not keep (procedure and variable names, `Declare` parameter lists).
+  - Known approximations and scope boundaries (16-bit NE vs 32-bit PE).
 
 ---
 
 ## Related Links
 - [Root Project README](../README.md)
-- [Test Fixtures (`test_input/`)](../test_input/)
+- [Test Fixtures (`test_input/`)](../test_input/README.md)

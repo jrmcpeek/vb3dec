@@ -9,7 +9,7 @@ The Go packages and command-line tools build without these files. Tests locate f
 ```text
 test_input/
   ff/        Final Fantasy Extreme (VBGuard-protected)
-    names/   Hand-written control name mappings for the -names option
+    names/   Control name mapping files for the -names option
   bascode/   BasCode for Windows 1.2 (unprotected; THREED.VBX, CMDIALOG.VBX)
   empire/    World Empire III (unprotected; THREED.VBX)
   */_archive Original distribution archives the sample was extracted from
@@ -19,12 +19,12 @@ test_input/
 
 | Directory | Program | Executable | Notes |
 | :--- | :--- | :--- | :--- |
-| `ff/` | *Final Fantasy Extreme* | `FF.EXE` | Primary sample discussed in the root README. Control and form names were stripped by VBGuard; `names/` restores readable names. |
+| `ff/` | *Final Fantasy Extreme* | `FF.EXE` | Primary sample discussed in the root README. Control and form names were stripped by VBGuard. The `names/` files list the generated names (`frm1`, `control1`, ...), one line per control ID, as a template for assigning readable names by hand. |
 | `bascode/` | BasCode for Windows 1.2 | `BASCODE.EXE` | Basic source code librarian. Keeps its form and control name tables; two code modules and six forms with nested 3D frames. |
-| `empire/` | World Empire III | `EMPIRE.EXE` | Strategy game. Keeps its name tables; uses control arrays, Line controls and many pictures. The game's data files (`.BMP`, `.MID`, `.VBL`, ...) are kept as distributed. |
+| `empire/` | World Empire III | `EMPIRE.EXE` | Strategy game. Keeps its name tables; a declaration-only code module, control arrays, Line controls and many pictures. The game's data files (`.BMP`, `.MID`, `.VBL`, ...) are kept as distributed. |
 
 - **`ff/FF.DLL`** is the Final Fantasy Extreme companion library. It is copied into generated project output but is not required to parse the executable.
-- **`ff/MCI.VBX`** is the Microsoft Multimedia Control used by `FF.EXE`; its control model is read to decode `MMControl` properties.
+- **`ff/MCI.VBX`** is the Microsoft Multimedia Control used by `FF.EXE`; its control model is read to decode `MMControl` properties and events.
 - **`ff/VBRUN300.DLL`** is Microsoft's Visual Basic 3 runtime. The decompiler neither loads nor executes it; `cmd/vbrunprops` reads its built-in control models to regenerate `pkg/vbx/vbrun_tables.go`.
 
 ## Checksums (SHA-256)

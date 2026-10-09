@@ -356,3 +356,25 @@ func TestImageControlProperties(t *testing.T) {
 			p32["Left"], p32["Top"], p32["Width"], p32["Height"])
 	}
 }
+
+func TestDecodeEventTable(t *testing.T) {
+	// A CommandButton whose event table binds slot 0 (Click) and slot 8
+	// (MouseDown) to procedure descriptors 0x0120 and 0x0158.
+	button := controlRecord(1, 1, 0x04,
+		0xFF,
+		0x11, 0x00, 0x00, // TabIndex
+		0xFF, 0x09,
+		0x21, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x59, 0x01,
+	)
+	form, _, err := frm.DecodeFormStream(formStream(button, []byte{2}), frm.FormRef{FormName: "frm1"}, nil)
+	if err != nil {
+		t.Fatalf("DecodeFormStream: %v", err)
+	}
+	events := form.Controls[0].Events
+	if len(events) != 2 {
+		t.Fatalf("expected 2 bound events, got %+v", events)
+	}
+	if events[0].Event.Name != "Click" || events[0].ProcRef != 0x0120 || events[1].Event.Name != "MouseDown" || events[1].ProcRef != 0x0158 {
+		t.Errorf("unexpected bindings: %+v", events)
+	}
+}

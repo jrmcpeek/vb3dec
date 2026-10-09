@@ -1,5 +1,5 @@
 # Sample programs are third-party files supplied locally (see README.md).
-# Only documentation and the hand-written name mappings are versioned.
+# Only documentation and the -names mapping files are versioned.
 *
 !*/
 !.gitignore

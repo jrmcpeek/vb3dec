@@ -50,8 +50,31 @@ var StdProps = []Prop{
 	{Name: "DataChanged", Flags: 0x80102A04, Std: 42},
 }
 
+// StdEvents lists the standard events referenced by the ~n sentinels in
+// control event lists, indexed by n.
+var StdEvents = []Event{
+	{Name: "Click", Params: 0, Std: 0},
+	{Name: "DblClick", Params: 0, Std: 1},
+	{Name: "DragDrop", Params: 3, Std: 2},
+	{Name: "DragOver", Params: 4, Std: 3},
+	{Name: "GotFocus", Params: 0, Std: 4},
+	{Name: "KeyDown", Params: 2, Std: 5},
+	{Name: "KeyPress", Params: 1, Std: 6},
+	{Name: "KeyUp", Params: 2, Std: 7},
+	{Name: "LostFocus", Params: 0, Std: 8},
+	{Name: "MouseDown", Params: 4, Std: 9},
+	{Name: "MouseMove", Params: 4, Std: 10},
+	{Name: "MouseUp", Params: 4, Std: 11},
+	{Name: "LinkError", Params: 1, Std: 12},
+	{Name: "LinkOpen", Params: 1, Std: 13},
+	{Name: "LinkClose", Params: 0, Std: 14},
+	{Name: "LinkNotify", Params: 0, Std: 15},
+	{Name: "Change", Params: 0, Std: 16},
+}
+
 // BuiltinModels lists the control models implemented by VBRUN300.DLL, keyed by
-// default control name. Property order is property ID order.
+// default control name. Property order is property ID order; event order
+// is the slot order of form event tables.
 var BuiltinModels = map[string]*Model{
 	"Check": {DefCtlName: "Check", Props: []Prop{
 		{Name: "Caption", Flags: 0x80CA4401, Std: 12},        // 0x00
@@ -85,6 +108,18 @@ var BuiltinModels = map[string]*Model{
 		{Name: "DataSource", Flags: 0x82D13201, Std: 40},     // 0x1C
 		{Name: "DataField", Flags: 0x80D12601, Std: 41},      // 0x1D
 		{Name: "DataChanged", Flags: 0x80102A04, Std: 42},    // 0x1E
+	}, Events: []Event{
+		{Name: "Click", Params: 0, Std: -1},     // slot 0
+		{Name: "DragDrop", Params: 3, Std: 2},   // slot 1
+		{Name: "DragOver", Params: 4, Std: 3},   // slot 2
+		{Name: "GotFocus", Params: 0, Std: 4},   // slot 3
+		{Name: "KeyDown", Params: 2, Std: 5},    // slot 4
+		{Name: "KeyPress", Params: 1, Std: 6},   // slot 5
+		{Name: "KeyUp", Params: 2, Std: 7},      // slot 6
+		{Name: "LostFocus", Params: 0, Std: 8},  // slot 7
+		{Name: "MouseDown", Params: 4, Std: 9},  // slot 8
+		{Name: "MouseMove", Params: 4, Std: 10}, // slot 9
+		{Name: "MouseUp", Params: 4, Std: 11},   // slot 10
 	}},
 	"Combo": {DefCtlName: "Combo", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},            // 0x00
@@ -124,6 +159,18 @@ var BuiltinModels = map[string]*Model{
 		{Name: "NewIndex", Flags: 0x00003802, Std: -1},       // 0x22
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31},  // 0x23
 		{Name: " ", Flags: 0xA0C11806, Std: 39},              // 0x24
+	}, Events: []Event{
+		{Name: "Change", Params: 0, Std: -1},   // slot 0
+		{Name: "Click", Params: 0, Std: -1},    // slot 1
+		{Name: "DblClick", Params: 0, Std: -1}, // slot 2
+		{Name: "DragDrop", Params: 3, Std: 2},  // slot 3
+		{Name: "DragOver", Params: 4, Std: 3},  // slot 4
+		{Name: "DropDown", Params: 0, Std: -1}, // slot 5
+		{Name: "GotFocus", Params: 0, Std: 4},  // slot 6
+		{Name: "KeyDown", Params: 2, Std: 5},   // slot 7
+		{Name: "KeyPress", Params: 1, Std: 6},  // slot 8
+		{Name: "KeyUp", Params: 2, Std: 7},     // slot 9
+		{Name: "LostFocus", Params: 0, Std: 8}, // slot 10
 	}},
 	"Command": {DefCtlName: "Command", Props: []Prop{
 		{Name: "Caption", Flags: 0x80CA4401, Std: 12},        // 0x00
@@ -154,6 +201,18 @@ var BuiltinModels = map[string]*Model{
 		{Name: "Tag", Flags: 0x80C12201, Std: 25},            // 0x19
 		{Name: "hWnd", Flags: 0x80005802, Std: 2},            // 0x1A
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31},  // 0x1B
+	}, Events: []Event{
+		{Name: "Click", Params: 0, Std: -1},     // slot 0
+		{Name: "DragDrop", Params: 3, Std: 2},   // slot 1
+		{Name: "DragOver", Params: 4, Std: 3},   // slot 2
+		{Name: "GotFocus", Params: 0, Std: 4},   // slot 3
+		{Name: "KeyDown", Params: 2, Std: 5},    // slot 4
+		{Name: "KeyPress", Params: 1, Std: 6},   // slot 5
+		{Name: "KeyUp", Params: 2, Std: 7},      // slot 6
+		{Name: "LostFocus", Params: 0, Std: 8},  // slot 7
+		{Name: "MouseDown", Params: 4, Std: 9},  // slot 8
+		{Name: "MouseMove", Params: 4, Std: 10}, // slot 9
+		{Name: "MouseUp", Params: 4, Std: 11},   // slot 10
 	}},
 	"Data": {DefCtlName: "Data", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},            // 0x00
@@ -188,6 +247,15 @@ var BuiltinModels = map[string]*Model{
 		{Name: "ForeColor", Flags: 0x80D12405, Std: 4},       // 0x1D
 		{Name: "DragMode", Flags: 0x80C12206, Std: 21},       // 0x1E
 		{Name: "DragIcon", Flags: 0x84C1A20C, Std: 22},       // 0x1F
+	}, Events: []Event{
+		{Name: "Error", Params: 2, Std: -1},      // slot 0
+		{Name: "Reposition", Params: 0, Std: -1}, // slot 1
+		{Name: "Validate", Params: 2, Std: -1},   // slot 2
+		{Name: "DragDrop", Params: 3, Std: 2},    // slot 3
+		{Name: "DragOver", Params: 4, Std: 3},    // slot 4
+		{Name: "MouseDown", Params: 4, Std: 9},   // slot 5
+		{Name: "MouseMove", Params: 4, Std: 10},  // slot 6
+		{Name: "MouseUp", Params: 4, Std: 11},    // slot 7
 	}},
 	"Dir": {DefCtlName: "Dir", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},            // 0x00
@@ -220,6 +288,19 @@ var BuiltinModels = map[string]*Model{
 		{Name: "hWnd", Flags: 0x80005802, Std: 2},            // 0x1B
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31},  // 0x1C
 		{Name: " ", Flags: 0xA0C11806, Std: 39},              // 0x1D
+	}, Events: []Event{
+		{Name: "Change", Params: 0, Std: -1},    // slot 0
+		{Name: "Click", Params: 0, Std: -1},     // slot 1
+		{Name: "DragDrop", Params: 3, Std: 2},   // slot 2
+		{Name: "DragOver", Params: 4, Std: 3},   // slot 3
+		{Name: "GotFocus", Params: 0, Std: 4},   // slot 4
+		{Name: "KeyDown", Params: 2, Std: 5},    // slot 5
+		{Name: "KeyPress", Params: 1, Std: 6},   // slot 6
+		{Name: "KeyUp", Params: 2, Std: 7},      // slot 7
+		{Name: "LostFocus", Params: 0, Std: 8},  // slot 8
+		{Name: "MouseDown", Params: 4, Std: 9},  // slot 9
+		{Name: "MouseMove", Params: 4, Std: 10}, // slot 10
+		{Name: "MouseUp", Params: 4, Std: 11},   // slot 11
 	}},
 	"Drive": {DefCtlName: "Drive", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},            // 0x00
@@ -251,6 +332,15 @@ var BuiltinModels = map[string]*Model{
 		{Name: "Tag", Flags: 0x80C12201, Std: 25},            // 0x1A
 		{Name: "hWnd", Flags: 0x80005802, Std: 2},            // 0x1B
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31},  // 0x1C
+	}, Events: []Event{
+		{Name: "Change", Params: 0, Std: -1},   // slot 0
+		{Name: "DragDrop", Params: 3, Std: 2},  // slot 1
+		{Name: "DragOver", Params: 4, Std: 3},  // slot 2
+		{Name: "GotFocus", Params: 0, Std: 4},  // slot 3
+		{Name: "KeyDown", Params: 2, Std: 5},   // slot 4
+		{Name: "KeyPress", Params: 1, Std: 6},  // slot 5
+		{Name: "KeyUp", Params: 2, Std: 7},     // slot 6
+		{Name: "LostFocus", Params: 0, Std: 8}, // slot 7
 	}},
 	"File": {DefCtlName: "File", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},            // 0x00
@@ -293,6 +383,21 @@ var BuiltinModels = map[string]*Model{
 		{Name: "Selected", Flags: 0x00004D04, Std: -1},       // 0x25
 		{Name: "TopIndex", Flags: 0x00004C02, Std: -1},       // 0x26
 		{Name: " ", Flags: 0xA0C11806, Std: 39},              // 0x27
+	}, Events: []Event{
+		{Name: "Click", Params: 0, Std: -1},         // slot 0
+		{Name: "DblClick", Params: 0, Std: -1},      // slot 1
+		{Name: "DragDrop", Params: 3, Std: 2},       // slot 2
+		{Name: "DragOver", Params: 4, Std: 3},       // slot 3
+		{Name: "GotFocus", Params: 0, Std: 4},       // slot 4
+		{Name: "KeyDown", Params: 2, Std: 5},        // slot 5
+		{Name: "KeyPress", Params: 1, Std: 6},       // slot 6
+		{Name: "KeyUp", Params: 2, Std: 7},          // slot 7
+		{Name: "LostFocus", Params: 0, Std: 8},      // slot 8
+		{Name: "MouseDown", Params: 4, Std: 9},      // slot 9
+		{Name: "MouseMove", Params: 4, Std: 10},     // slot 10
+		{Name: "MouseUp", Params: 4, Std: 11},       // slot 11
+		{Name: "PathChange", Params: 0, Std: -1},    // slot 12
+		{Name: "PatternChange", Params: 0, Std: -1}, // slot 13
 	}},
 	"Form": {DefCtlName: "Form", Props: []Prop{
 		{Name: "Caption", Flags: 0x80CA4401, Std: 12},         // 0x00
@@ -352,6 +457,30 @@ var BuiltinModels = map[string]*Model{
 		{Name: "ClientTop", Flags: 0x0201580A, Std: -1},       // 0x36
 		{Name: "ClientWidth", Flags: 0x02015808, Std: -1},     // 0x37
 		{Name: "ClientHeight", Flags: 0x0201580A, Std: -1},    // 0x38
+	}, Events: []Event{
+		{Name: "DragDrop", Params: 3, Std: 2},     // slot 0
+		{Name: "DragOver", Params: 4, Std: 3},     // slot 1
+		{Name: "LinkClose", Params: 0, Std: -1},   // slot 2
+		{Name: "LinkError", Params: 1, Std: -1},   // slot 3
+		{Name: "LinkExecute", Params: 2, Std: -1}, // slot 4
+		{Name: "LinkOpen", Params: 1, Std: -1},    // slot 5
+		{Name: "Load", Params: 0, Std: -1},        // slot 6
+		{Name: "Resize", Params: 0, Std: -1},      // slot 7
+		{Name: "Unload", Params: 1, Std: -1},      // slot 8
+		{Name: "QueryUnload", Params: 2, Std: -1}, // slot 9
+		{Name: "Activate", Params: 0, Std: -1},    // slot 10
+		{Name: "Deactivate", Params: 0, Std: -1},  // slot 11
+		{Name: "Click", Params: 0, Std: 0},        // slot 12
+		{Name: "DblClick", Params: 0, Std: 1},     // slot 13
+		{Name: "GotFocus", Params: 0, Std: 4},     // slot 14
+		{Name: "KeyDown", Params: 2, Std: 5},      // slot 15
+		{Name: "KeyPress", Params: 1, Std: 6},     // slot 16
+		{Name: "KeyUp", Params: 2, Std: 7},        // slot 17
+		{Name: "LostFocus", Params: 0, Std: 8},    // slot 18
+		{Name: "MouseDown", Params: 4, Std: 9},    // slot 19
+		{Name: "MouseMove", Params: 4, Std: 10},   // slot 20
+		{Name: "MouseUp", Params: 4, Std: 11},     // slot 21
+		{Name: "Paint", Params: 0, Std: -1},       // slot 22
 	}},
 	"Frame": {DefCtlName: "Frame", Props: []Prop{
 		{Name: "Caption", Flags: 0x80CA4401, Std: 12},        // 0x00
@@ -380,6 +509,14 @@ var BuiltinModels = map[string]*Model{
 		{Name: "hWnd", Flags: 0x80005802, Std: 2},            // 0x17
 		{Name: "ClipControls", Flags: 0x80E13204, Std: 29},   // 0x18
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31},  // 0x19
+	}, Events: []Event{
+		{Name: "DragDrop", Params: 3, Std: 2},   // slot 0
+		{Name: "DragOver", Params: 4, Std: 3},   // slot 1
+		{Name: "MouseDown", Params: 4, Std: 9},  // slot 2
+		{Name: "MouseMove", Params: 4, Std: 10}, // slot 3
+		{Name: "MouseUp", Params: 4, Std: 11},   // slot 4
+		{Name: "Click", Params: 0, Std: 0},      // slot 5
+		{Name: "DblClick", Params: 0, Std: 1},   // slot 6
 	}},
 	"HScroll": {DefCtlName: "HScroll", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},           // 0x00
@@ -404,6 +541,16 @@ var BuiltinModels = map[string]*Model{
 		{Name: "Tag", Flags: 0x80C12201, Std: 25},           // 0x13
 		{Name: "hWnd", Flags: 0x80005802, Std: 2},           // 0x14
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31}, // 0x15
+	}, Events: []Event{
+		{Name: "Change", Params: 0, Std: -1},   // slot 0
+		{Name: "DragDrop", Params: 3, Std: 2},  // slot 1
+		{Name: "DragOver", Params: 4, Std: 3},  // slot 2
+		{Name: "GotFocus", Params: 0, Std: 4},  // slot 3
+		{Name: "KeyDown", Params: 2, Std: 5},   // slot 4
+		{Name: "KeyPress", Params: 1, Std: 6},  // slot 5
+		{Name: "KeyUp", Params: 2, Std: 7},     // slot 6
+		{Name: "LostFocus", Params: 0, Std: 8}, // slot 7
+		{Name: "Scroll", Params: 0, Std: -1},   // slot 8
 	}},
 	"Image": {DefCtlName: "Image", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},          // 0x00
@@ -425,6 +572,14 @@ var BuiltinModels = map[string]*Model{
 		{Name: "DataSource", Flags: 0x82D13201, Std: 40},   // 0x10
 		{Name: "DataField", Flags: 0x80D12601, Std: 41},    // 0x11
 		{Name: "DataChanged", Flags: 0x80102A04, Std: 42},  // 0x12
+	}, Events: []Event{
+		{Name: "Click", Params: 0, Std: 0},      // slot 0
+		{Name: "DblClick", Params: 0, Std: 1},   // slot 1
+		{Name: "DragDrop", Params: 3, Std: 2},   // slot 2
+		{Name: "DragOver", Params: 4, Std: 3},   // slot 3
+		{Name: "MouseDown", Params: 4, Std: 9},  // slot 4
+		{Name: "MouseMove", Params: 4, Std: 10}, // slot 5
+		{Name: "MouseUp", Params: 4, Std: 11},   // slot 6
 	}},
 	"Label": {DefCtlName: "Label", Props: []Prop{
 		{Name: "Caption", Flags: 0x80CA4401, Std: 12},        // 0x00
@@ -462,6 +617,19 @@ var BuiltinModels = map[string]*Model{
 		{Name: "DataSource", Flags: 0x82D13201, Std: 40},     // 0x20
 		{Name: "DataField", Flags: 0x80D12601, Std: 41},      // 0x21
 		{Name: "DataChanged", Flags: 0x80102A04, Std: 42},    // 0x22
+	}, Events: []Event{
+		{Name: "Change", Params: 0, Std: 16},     // slot 0
+		{Name: "Click", Params: 0, Std: 0},       // slot 1
+		{Name: "DblClick", Params: 0, Std: 1},    // slot 2
+		{Name: "DragDrop", Params: 3, Std: 2},    // slot 3
+		{Name: "DragOver", Params: 4, Std: 3},    // slot 4
+		{Name: "LinkClose", Params: 0, Std: 14},  // slot 5
+		{Name: "LinkError", Params: 1, Std: 12},  // slot 6
+		{Name: "LinkOpen", Params: 1, Std: 13},   // slot 7
+		{Name: "MouseDown", Params: 4, Std: 9},   // slot 8
+		{Name: "MouseMove", Params: 4, Std: 10},  // slot 9
+		{Name: "MouseUp", Params: 4, Std: 11},    // slot 10
+		{Name: "LinkNotify", Params: 0, Std: 15}, // slot 11
 	}},
 	"Line": {DefCtlName: "Line", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},         // 0x00
@@ -477,7 +645,7 @@ var BuiltinModels = map[string]*Model{
 		{Name: "DrawMode", Flags: 0x00C14406, Std: -1},    // 0x0A
 		{Name: "BorderStyle", Flags: 0x01C12286, Std: -1}, // 0x0B
 		{Name: "BorderWidth", Flags: 0x00C12402, Std: -1}, // 0x0C
-	}},
+	}, Events: []Event{}},
 	"List": {DefCtlName: "List", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},            // 0x00
 		{Name: "Index", Flags: 0x84C1D43D, Std: 1},           // 0x01
@@ -517,6 +685,19 @@ var BuiltinModels = map[string]*Model{
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31},  // 0x23
 		{Name: "hWnd", Flags: 0x80005802, Std: 2},            // 0x24
 		{Name: " ", Flags: 0xA0C11806, Std: 39},              // 0x25
+	}, Events: []Event{
+		{Name: "Click", Params: 0, Std: -1},     // slot 0
+		{Name: "DblClick", Params: 0, Std: -1},  // slot 1
+		{Name: "DragDrop", Params: 3, Std: 2},   // slot 2
+		{Name: "DragOver", Params: 4, Std: 3},   // slot 3
+		{Name: "GotFocus", Params: 0, Std: 4},   // slot 4
+		{Name: "KeyDown", Params: 2, Std: 5},    // slot 5
+		{Name: "KeyPress", Params: 1, Std: 6},   // slot 6
+		{Name: "KeyUp", Params: 2, Std: 7},      // slot 7
+		{Name: "LostFocus", Params: 0, Std: 8},  // slot 8
+		{Name: "MouseDown", Params: 4, Std: 9},  // slot 9
+		{Name: "MouseMove", Params: 4, Std: 10}, // slot 10
+		{Name: "MouseUp", Params: 4, Std: 11},   // slot 11
 	}},
 	"MDIForm": {DefCtlName: "MDIForm", Props: []Prop{
 		{Name: "Caption", Flags: 0x80CA4401, Std: 12},       // 0x00
@@ -576,6 +757,19 @@ var BuiltinModels = map[string]*Model{
 		{Name: "ClientTop", Flags: 0x0201580A, Std: -1},     // 0x36
 		{Name: "ClientWidth", Flags: 0x02015808, Std: -1},   // 0x37
 		{Name: "ClientHeight", Flags: 0x0201580A, Std: -1},  // 0x38
+	}, Events: []Event{
+		{Name: "DragDrop", Params: 3, Std: 2},     // slot 0
+		{Name: "DragOver", Params: 4, Std: 3},     // slot 1
+		{Name: "LinkClose", Params: 0, Std: -1},   // slot 2
+		{Name: "LinkError", Params: 1, Std: -1},   // slot 3
+		{Name: "LinkExecute", Params: 2, Std: -1}, // slot 4
+		{Name: "LinkOpen", Params: 1, Std: -1},    // slot 5
+		{Name: "Load", Params: 0, Std: -1},        // slot 6
+		{Name: "Resize", Params: 0, Std: -1},      // slot 7
+		{Name: "Unload", Params: 1, Std: -1},      // slot 8
+		{Name: "QueryUnload", Params: 2, Std: -1}, // slot 9
+		{Name: "Activate", Params: 0, Std: -1},    // slot 10
+		{Name: "Deactivate", Params: 0, Std: -1},  // slot 11
 	}},
 	"Menu": {DefCtlName: "Menu", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},           // 0x00
@@ -591,6 +785,8 @@ var BuiltinModels = map[string]*Model{
 		{Name: "Tag", Flags: 0x80C12201, Std: 25},           // 0x0A
 		{Name: "WindowList", Flags: 0x00C13404, Std: -1},    // 0x0B
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31}, // 0x0C
+	}, Events: []Event{
+		{Name: "Click", Params: 0, Std: -1}, // slot 0
 	}},
 	"Option": {DefCtlName: "Option", Props: []Prop{
 		{Name: "Caption", Flags: 0x80CA4401, Std: 12},        // 0x00
@@ -621,6 +817,19 @@ var BuiltinModels = map[string]*Model{
 		{Name: "Alignment", Flags: 0x00E13406, Std: -1},      // 0x19
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31},  // 0x1A
 		{Name: "hWnd", Flags: 0x80005802, Std: 2},            // 0x1B
+	}, Events: []Event{
+		{Name: "Click", Params: 0, Std: -1},     // slot 0
+		{Name: "DblClick", Params: 0, Std: -1},  // slot 1
+		{Name: "DragDrop", Params: 3, Std: 2},   // slot 2
+		{Name: "DragOver", Params: 4, Std: 3},   // slot 3
+		{Name: "GotFocus", Params: 0, Std: 4},   // slot 4
+		{Name: "KeyDown", Params: 2, Std: 5},    // slot 5
+		{Name: "KeyPress", Params: 1, Std: 6},   // slot 6
+		{Name: "KeyUp", Params: 2, Std: 7},      // slot 7
+		{Name: "LostFocus", Params: 0, Std: 8},  // slot 8
+		{Name: "MouseDown", Params: 4, Std: 9},  // slot 9
+		{Name: "MouseMove", Params: 4, Std: 10}, // slot 10
+		{Name: "MouseUp", Params: 4, Std: 11},   // slot 11
 	}},
 	"Picture": {DefCtlName: "Picture", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},             // 0x00
@@ -678,6 +887,26 @@ var BuiltinModels = map[string]*Model{
 		{Name: "DataSource", Flags: 0x82D13201, Std: 40},      // 0x34
 		{Name: "DataField", Flags: 0x80D12601, Std: 41},       // 0x35
 		{Name: "DataChanged", Flags: 0x80102A04, Std: 42},     // 0x36
+	}, Events: []Event{
+		{Name: "Change", Params: 0, Std: 16},     // slot 0
+		{Name: "Click", Params: 0, Std: 0},       // slot 1
+		{Name: "DblClick", Params: 0, Std: 1},    // slot 2
+		{Name: "DragDrop", Params: 3, Std: 2},    // slot 3
+		{Name: "DragOver", Params: 4, Std: 3},    // slot 4
+		{Name: "GotFocus", Params: 0, Std: 4},    // slot 5
+		{Name: "KeyDown", Params: 2, Std: 5},     // slot 6
+		{Name: "KeyPress", Params: 1, Std: 6},    // slot 7
+		{Name: "KeyUp", Params: 2, Std: 7},       // slot 8
+		{Name: "LinkClose", Params: 0, Std: 14},  // slot 9
+		{Name: "LinkError", Params: 1, Std: 12},  // slot 10
+		{Name: "LinkOpen", Params: 1, Std: 13},   // slot 11
+		{Name: "LostFocus", Params: 0, Std: 8},   // slot 12
+		{Name: "MouseDown", Params: 4, Std: 9},   // slot 13
+		{Name: "MouseMove", Params: 4, Std: 10},  // slot 14
+		{Name: "MouseUp", Params: 4, Std: 11},    // slot 15
+		{Name: "Paint", Params: 0, Std: -1},      // slot 16
+		{Name: "LinkNotify", Params: 0, Std: 15}, // slot 17
+		{Name: "Resize", Params: 0, Std: -1},     // slot 18
 	}},
 	"Shape": {DefCtlName: "Shape", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},         // 0x00
@@ -698,7 +927,7 @@ var BuiltinModels = map[string]*Model{
 		{Name: "FillColor", Flags: 0x00D12485, Std: -1},   // 0x0F
 		{Name: "BackStyle", Flags: 0x01C12286, Std: -1},   // 0x10
 		{Name: "FillStyle", Flags: 0x01C12286, Std: -1},   // 0x11
-	}},
+	}, Events: []Event{}},
 	"Text": {DefCtlName: "Text", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},            // 0x00
 		{Name: "Index", Flags: 0x84C1D43D, Std: 1},           // 0x01
@@ -744,6 +973,24 @@ var BuiltinModels = map[string]*Model{
 		{Name: "DataSource", Flags: 0x82D13201, Std: 40},     // 0x29
 		{Name: "DataField", Flags: 0x80D12601, Std: 41},      // 0x2A
 		{Name: "DataChanged", Flags: 0x80102A04, Std: 42},    // 0x2B
+	}, Events: []Event{
+		{Name: "Change", Params: 0, Std: 16},     // slot 0
+		{Name: "DragDrop", Params: 3, Std: 2},    // slot 1
+		{Name: "DragOver", Params: 4, Std: 3},    // slot 2
+		{Name: "GotFocus", Params: 0, Std: 4},    // slot 3
+		{Name: "KeyDown", Params: 2, Std: 5},     // slot 4
+		{Name: "KeyPress", Params: 1, Std: 6},    // slot 5
+		{Name: "KeyUp", Params: 2, Std: 7},       // slot 6
+		{Name: "LinkClose", Params: 0, Std: 14},  // slot 7
+		{Name: "LinkError", Params: 1, Std: 12},  // slot 8
+		{Name: "LinkOpen", Params: 1, Std: 13},   // slot 9
+		{Name: "LostFocus", Params: 0, Std: 8},   // slot 10
+		{Name: "LinkNotify", Params: 0, Std: 15}, // slot 11
+		{Name: "MouseDown", Params: 4, Std: 9},   // slot 12
+		{Name: "MouseMove", Params: 4, Std: 10},  // slot 13
+		{Name: "MouseUp", Params: 4, Std: 11},    // slot 14
+		{Name: "Click", Params: 0, Std: 0},       // slot 15
+		{Name: "DblClick", Params: 0, Std: 1},    // slot 16
 	}},
 	"Timer": {DefCtlName: "Timer", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},      // 0x00
@@ -755,6 +1002,8 @@ var BuiltinModels = map[string]*Model{
 		{Name: " ", Flags: 0x40020803, Std: -1},        // 0x06
 		{Name: "Left", Flags: 0x82013408, Std: 36},     // 0x07
 		{Name: "Top", Flags: 0x8201340A, Std: 37},      // 0x08
+	}, Events: []Event{
+		{Name: "Timer", Params: 0, Std: -1}, // slot 0
 	}},
 	"VScroll": {DefCtlName: "VScroll", Props: []Prop{
 		{Name: "Name", Flags: 0x8600D43E, Std: 0},           // 0x00
@@ -779,5 +1028,15 @@ var BuiltinModels = map[string]*Model{
 		{Name: "Tag", Flags: 0x80C12201, Std: 25},           // 0x13
 		{Name: "hWnd", Flags: 0x80005802, Std: 2},           // 0x14
 		{Name: "HelpContextID", Flags: 0x80C12203, Std: 31}, // 0x15
+	}, Events: []Event{
+		{Name: "Change", Params: 0, Std: -1},   // slot 0
+		{Name: "DragDrop", Params: 3, Std: 2},  // slot 1
+		{Name: "DragOver", Params: 4, Std: 3},  // slot 2
+		{Name: "GotFocus", Params: 0, Std: 4},  // slot 3
+		{Name: "KeyDown", Params: 2, Std: 5},   // slot 4
+		{Name: "KeyPress", Params: 1, Std: 6},  // slot 5
+		{Name: "KeyUp", Params: 2, Std: 7},     // slot 6
+		{Name: "LostFocus", Params: 0, Std: 8}, // slot 7
+		{Name: "Scroll", Params: 0, Std: -1},   // slot 8
 	}},
 }

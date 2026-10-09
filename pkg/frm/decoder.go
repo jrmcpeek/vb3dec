@@ -87,11 +87,13 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 
 	var formValues []propValue
 	if p < formEndPos {
-		var err error
-		formValues, err = walkProperties(vbx.BuiltinModels["Form"], stream[p:formEndPos], true, false)
+		formModel := vbx.BuiltinModels["Form"]
+		values, eventPos, err := walkProperties(formModel, stream[p:formEndPos], true, false)
 		if err != nil {
 			form.Warnings = append(form.Warnings, fmt.Sprintf("form %s: %v; remaining properties skipped", form.Name, err))
 		}
+		formValues = values
+		formNode.Events = decodeEventTable(stream[p:formEndPos], eventPos, formModel)
 	}
 	formNode.Properties = pd.formProperties(formValues)
 	pos = formEndPos
@@ -148,7 +150,12 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 		ctrlEndPos := pos + recLen
 
 		cp := pos + 5
+		arrayIndex := 0
 		if hasFlags {
+			if cp+2 > ctrlEndPos {
+				return nil, nil, fmt.Errorf("control record at offset %d is truncated before its array index", pos)
+			}
+			arrayIndex = int(binary.LittleEndian.Uint16(stream[cp : cp+2]))
 			cp += 2 // Control array index
 		}
 		if cp > ctrlEndPos {
@@ -203,9 +210,11 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 		}
 
 		node := &ControlNode{
-			ID:       ctrlID,
-			Name:     ctrlName,
-			TypeName: typeName,
+			ID:         ctrlID,
+			Name:       ctrlName,
+			TypeName:   typeName,
+			IsArray:    hasFlags,
+			ArrayIndex: arrayIndex,
 		}
 
 		// Decode properties
@@ -216,11 +225,12 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 				form.Warnings = append(form.Warnings, fmt.Sprintf("control %s (%s): no property table for control type 0x%02X; properties not decoded", ctrlName, typeName, typeID))
 			}
 		} else {
-			values, err := walkProperties(model, stream[cp:ctrlEndPos], false, model == vbx.BuiltinModels["Combo"])
+			values, eventPos, err := walkProperties(model, stream[cp:ctrlEndPos], false, model == vbx.BuiltinModels["Combo"])
 			if err != nil {
 				form.Warnings = append(form.Warnings, fmt.Sprintf("control %s (%s): %v; remaining properties skipped", ctrlName, typeName, err))
 			}
 			node.Properties = pd.controlProperties(typeName, values)
+			node.Events = decodeEventTable(stream[cp:ctrlEndPos], eventPos, model)
 		}
 
 		// Add to tree and flat list
@@ -248,8 +258,10 @@ const comboStyleDropdownList = 2
 // walkProperties splits a control record's property area into property values.
 // The area holds optional pre-window-creation properties, a 0xFF separator,
 // the remaining properties, and finally the event table, which starts with a
-// second 0xFF. Values decoded before an error are returned with it.
-func walkProperties(model *vbx.Model, blob []byte, isForm bool, isCombo bool) ([]propValue, error) {
+// second 0xFF. It returns the values and the event table's offset in blob, or
+// -1 if the walk did not reach it. Values decoded before an error are
+// returned with it.
+func walkProperties(model *vbx.Model, blob []byte, isForm bool, isCombo bool) ([]propValue, int, error) {
 	var values []propValue
 	seenSeparator := false
 	comboStyle := -1
@@ -261,13 +273,12 @@ func walkProperties(model *vbx.Model, blob []byte, isForm bool, isCombo bool) ([
 				p++
 				continue
 			}
-			// Event table start
-			break
+			return values, p, nil
 		}
 		id := int(blob[p])
 		p++
 		if id >= len(model.Props) {
-			return values, fmt.Errorf("property ID 0x%02X is outside the %d-entry property list", id, len(model.Props))
+			return values, -1, fmt.Errorf("property ID 0x%02X is outside the %d-entry property list", id, len(model.Props))
 		}
 		prop := model.Props[id]
 		if isCombo && prop.Std == stdText && comboStyle == comboStyleDropdownList {
@@ -276,7 +287,7 @@ func walkProperties(model *vbx.Model, blob []byte, isForm bool, isCombo bool) ([
 		}
 		n, err := payloadSize(prop, blob[p:], isForm)
 		if err != nil {
-			return values, fmt.Errorf("property %s (0x%02X): %w", prop.Name, id, err)
+			return values, -1, fmt.Errorf("property %s (0x%02X): %w", prop.Name, id, err)
 		}
 		if isCombo && prop.Name == "Style" && n == 1 {
 			comboStyle = int(blob[p])
@@ -284,7 +295,49 @@ func walkProperties(model *vbx.Model, blob []byte, isForm bool, isCombo bool) ([
 		values = append(values, propValue{prop: prop, data: blob[p : p+n]})
 		p += n
 	}
-	return values, nil
+	return values, -1, nil
+}
+
+// decodeEventTable reads the event table at pos (0xFF, slot count, one word
+// per slot) and returns the bound slots. A slot word with bit 0 set refers to
+// the descriptor of the event procedure. When the property walk did not reach
+// the table (pos < 0), the table is located from the end of the record.
+func decodeEventTable(blob []byte, pos int, model *vbx.Model) []EventBinding {
+	if pos < 0 {
+		pos = findEventTable(blob)
+	}
+	if pos < 0 || pos+2 > len(blob) || blob[pos] != 0xFF {
+		return nil
+	}
+	count := int(blob[pos+1])
+	var bindings []EventBinding
+	for slot := 0; slot < count && pos+4+slot*2 <= len(blob); slot++ {
+		w := binary.LittleEndian.Uint16(blob[pos+2+slot*2:])
+		if w == 0 || w&1 == 0 {
+			continue
+		}
+		b := EventBinding{Slot: slot, ProcRef: w &^ 1}
+		if model != nil && slot < len(model.Events) {
+			b.Event = model.Events[slot]
+		}
+		bindings = append(bindings, b)
+	}
+	return bindings
+}
+
+// findEventTable locates an event table that ends the record, allowing a few
+// trailing bytes.
+func findEventTable(blob []byte) int {
+	for p := len(blob) - 2; p >= 0; p-- {
+		if blob[p] != 0xFF {
+			continue
+		}
+		count := int(blob[p+1])
+		if rem := len(blob) - (p + 2 + count*2); count > 0 && rem >= 0 && rem <= 4 {
+			return p
+		}
+	}
+	return -1
 }
 
 // stdText is the standard Text property index.

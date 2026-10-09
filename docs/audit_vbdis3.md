@@ -104,7 +104,7 @@ In `MODULE4.BAS` and `MODULE16.BAS`, `VBDIS3.67e` attempted to associate form co
   - Control 20 is `Begin CommandButton control20` (the "Buy" button), prompting `"Are you sure you want to buy 1..."`. `VBDIS3` misnamed it as `control22_Click`, which is actually a `Label` (`Begin Label control22` displaying item price).
   - Control 12 is `Begin CommandButton control12` (the "Exit" button), executing `Unload frm5` and `frm1.Show`. `VBDIS3` misnamed it as `control3_Click` (where control 3 is a `Label`).
 - **Resolution in `vb3dec`:**
-  The `vb3dec` engine directly reads the event binding table located at the tail of each form and control record in the form's `RT_RCDATA` resource stream (`0xFF, count`, followed by event descriptor words). Each non-zero word is rotated to match the procedure descriptor in Segment 3. This binds events directly to their true controls (`control19_Click`, `control20_Click`, `control12_Click`), eliminating collisions and ensuring full compilation readiness.
+  The `vb3dec` engine directly reads the event binding table located at the tail of each form and control record in the form's `RT_RCDATA` resource stream (`0xFF, count`, followed by one word per event slot). Each slot indexes the event list of the control's model in `VBRUN300.DLL` or its `.VBX`, and a slot word with bit 0 set refers to the event procedure's descriptor in Segment 3. This binds events directly to their true controls (`control19_Click`, `control20_Click`, `control12_Click`) and names them after the actual event, eliminating collisions.
 
 ### 1.6 Form Event Code Disconnection (`frmX.bas` vs `.FRM` Files)
 In authentic Visual Basic 3.0:
@@ -125,7 +125,7 @@ In `MODULE20.BAS` (`Sub Create_MAK_File`), `VBDIS3` constructed project `.MAK` f
 - **Hardcoded Absolute Host System Paths for VBXs:**
   `VBDIS3` inspected the running machine's `C:\WINDOWS\system\` directory during decompilation and hardcoded `C:\WINDOWS\system\MCI.VBX` into the `.MAK` file. When opened on any machine without that exact 16-bit directory path, VB3 errors on project load. `vb3dec` extracts custom VBX library names directly from the executable's manifest and emits clean relative paths (`MCI.VBX`).
 - **`ProjWinSize` / `ProjWinShow` IDE Artifacts:**
-  In `MODULE20.BAS`, `VBDIS3` opened `autoload.mak` (the VB3 IDE's default project template on the host machine) and scraped `ProjWinSize=152,402,248,215`. These coordinates are not present in compiled executables; they are user-preference window positions for the VB3 Project Window.
+  In `MODULE20.BAS`, `VBDIS3` opened `autoload.mak` (the VB3 IDE's default project template on the host machine) and scraped `ProjWinSize=152,402,248,215`. These coordinates are not present in compiled executables; they are user-preference window positions for the VB3 Project Window. `vb3dec` writes the same values as fixed defaults rather than reading them from the host machine.
 
 ### 1.8 Flawed Local Variable Type Inference vs. Physical Stack Frame Allocations
 
@@ -298,12 +298,11 @@ All 70 previously missing procedures in Forms 1–4 are fully recovered and emit
 2. **Total Module & Procedure Completeness**:
    Traverses all 11 modules and all 208 descriptors (191 local bytecode procedures + 17 external API declarations).
 3. **Resilient Bytecode Stream Parsing**:
-   Decodes 16-bit P-code tokens via native Go opcode definitions and token translation tables (`baseOpcodes` and `flagTokenData` in `pkg/pcode/opcodes_table.go`), completely eliminating opaque external binary `.DAT` blobs. For unknown or complex tokens, emits inline diagnostic comments (`' <UNKNOWN_OPCODE: 0xXXXX>`) and advances by operand size without terminating disassembly.
+   Decodes 16-bit P-code tokens via native Go opcode definitions and token translation tables (`baseOpcodes` and `flagTokenData` in `pkg/pcode/opcodes_table.go`, `controlTokenData` in `pkg/pcode/control_table.go`), completely eliminating opaque external binary `.DAT` blobs. Tokens missing from the tables are emitted as inline diagnostic comments (`' <UNKNOWN_OPCODE: 0xXXXX>`); known tokens without a statement decoder are logged as warnings and emitted as their keyword. In both cases disassembly advances by operand size without terminating.
 4. **Clean Code Generation**:
-   Emits syntactically valid Visual Basic 3 code:
+   Emits Visual Basic 3 code without the syntax errors listed in Section 3 (remaining gaps are listed in [Known Limitations](limitations.md)):
    - Strips type annotations from inside parameter parentheses (`(p00A4 As String)` instead of `(p00A4 As String ' 47)`).
-   - Emits valid API declarations (`Declare Function ... Lib ... Alias ...`).
-   - Formats branch targets as clear labels (`LXXXX:`).
+   - Emits valid API declarations (`Declare Function ... Lib ... Alias ...`), with parameter lists reconstructed from their call sites.
    - Generates relative project files (`FF.MAK`).
    - Appends event handlers directly inside `.FRM` files so controls function interactively.
    - Automatically copies required companion dependencies (`.dll`, `.vbx`) alongside the generated project.
@@ -324,9 +323,10 @@ All 70 previously missing procedures in Forms 1–4 are fully recovered and emit
 
 ### 6.2 Migration to Pure Go Tables
 - Binary `.DAT` files and `//go:embed` directives are completely eliminated.
-- The 512 opcode definitions and 10,838-entry flag translation array were parsed and converted into typed, readable static Go structures in `pkg/pcode/opcodes_table.go`:
-  - `var baseOpcodes = [512]OpcodeInfo{ ... }`
-  - `var flagTokenData = [10838]uint16{ ... }`
+- The 512 opcode definitions, the 10,838-entry flag translation array, and the control token table were parsed and converted into typed, readable static Go structures:
+  - `var baseOpcodes = [512]OpcodeInfo{ ... }` and `var flagTokenData = [10838]uint16{ ... }` in `pkg/pcode/opcodes_table.go`
+  - `var controlTokenData = [32514]byte{ ... }` in `pkg/pcode/control_table.go`
+- The form decoder's control property and event tables are likewise generated Go source (`pkg/vbx/vbrun_tables.go`), extracted from `VBRUN300.DLL` by `cmd/vbrunprops`.
 - Benefits:
   - **Zero opaque binary dependencies** in the source tree.
   - **Type safety and transparency**: Opcode keywords, parameter counts, and case categories are directly inspectable in Go code.

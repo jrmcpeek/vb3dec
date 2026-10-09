@@ -82,3 +82,59 @@ func TestEmpireDeclarationModule(t *testing.T) {
 		}
 	}
 }
+
+// TestSampleEventParameters requires every event procedure's parameters to
+// match the parameter count recorded in its procedure descriptor.
+func TestSampleEventParameters(t *testing.T) {
+	samples := []struct {
+		dir, exe string
+		events   int
+	}{
+		{fixture.FF, "FF.EXE", 131},
+		{fixture.Bascode, "BASCODE.EXE", 43},
+		{fixture.Empire, "EMPIRE.EXE", 165},
+	}
+	for _, s := range samples {
+		t.Run(s.dir, func(t *testing.T) {
+			proj := parseSample(t, s.dir, s.exe)
+			events := 0
+			for _, p := range proj.Procedures {
+				if !p.IsEvent {
+					continue
+				}
+				events++
+				if declared := int(p.PubOrPriv >> 9); declared != len(p.EventParams) {
+					t.Errorf("%s declares %d parameters but has %v", p.Name, declared, p.EventParams)
+				}
+			}
+			if events != s.events {
+				t.Errorf("got %d event procedures, want %d", events, s.events)
+			}
+		})
+	}
+}
+
+func TestSampleEventNames(t *testing.T) {
+	want := []struct {
+		dir, exe, module, signature string
+	}{
+		{fixture.FF, "FF.EXE", "frm8", "Sub control39_KeyDown (KeyCode As Integer, Shift As Integer)"},
+		{fixture.FF, "FF.EXE", "frm8", "Sub control32_Done (NotifyCode As Integer)"}, // MCI.VBX event
+		{fixture.Empire, "EMPIRE.EXE", "CountMap", "Sub Box_Attackables_KeyPress (Index As Integer, KeyAscii As Integer)"},
+	}
+	for _, w := range want {
+		proj := parseSample(t, w.dir, w.exe)
+		var code string
+		for _, m := range proj.Modules {
+			if m.Name == w.module {
+				var err error
+				if code, err = pcode.NewDisassembler(proj).DisassembleModule(m); err != nil {
+					t.Fatalf("DisassembleModule(%s): %v", m.Name, err)
+				}
+			}
+		}
+		if !strings.Contains(code, w.signature) {
+			t.Errorf("%s %s is missing %q", w.dir, w.module, w.signature)
+		}
+	}
+}

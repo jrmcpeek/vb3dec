@@ -8,6 +8,7 @@ import (
 
 	"vb3dec/pkg/frm"
 	"vb3dec/pkg/ne"
+	"vb3dec/pkg/vbx"
 )
 
 // ror3 performs a 16-bit right rotation by 3 bits.
@@ -43,6 +44,8 @@ type Procedure struct {
 	AliasName   string         // Dynamically resolved alias for external declarations (e.g. "FindChildByClass")
 	ParamByVal  map[int]bool   // 0-based parameter index -> true if ByVal
 	ParamTypes  map[int]string // 0-based parameter index -> inferred parameter type
+	IsEvent     bool           // Event procedure of a form or control
+	EventParams []EventParam   // Parameters of an event procedure
 	// ExternParams is the parameter list of an external declaration, inferred
 	// from its call sites (nil if it is never called).
 	ExternParams []string
@@ -74,7 +77,6 @@ type Module struct {
 	ControlTypes   map[string]string // Control name -> type name (e.g. "control4" -> "ComboBox")
 	ControlByIndex map[int]string    // 1-based control index -> control name (e.g. 1 -> "control1")
 	FileName       string            // Form file name for form modules (e.g. "FRM1.FRM")
-	FormResourceID uint16            // RT_RCDATA ID of the form stream for form modules
 	ModuleVars     []string          // Module-level variable declarations (e.g. "Dim m001E As Integer")
 	ModBytes       []byte            // Raw module data bytes from RT_RCDATA 2
 }
@@ -228,7 +230,6 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 			m.FormIndex = fr.Index
 			m.Name = fr.FormName
 			m.FileName = fr.FileName
-			m.FormResourceID = fr.ResourceID
 		} else if formByModule == nil && modIndex > 1 {
 			// Without a project directory, assume the layout of a single code
 			// module followed by the forms in project order.
@@ -236,7 +237,6 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 			m.FormIndex = modIndex - 1
 			m.Name = fmt.Sprintf("frm%d", m.FormIndex)
 			m.FileName = strings.ToUpper(m.Name) + ".FRM"
-			m.FormResourceID = uint16(m.FormIndex*2 + 2)
 		} else {
 			codeModules++
 			m.Name = fmt.Sprintf("Module%d", codeModules)
@@ -372,8 +372,12 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 		FormTags:     formTags,
 	}
 
-	resolveControlTypes(f, proj, formOpts)
-	resolveModuleEvents(f, modules, procByPtr)
+	forms, _, err := frm.ExtractForms(f, formOpts)
+	if err != nil {
+		forms = nil
+	}
+	resolveControlTypes(proj, forms)
+	resolveModuleEvents(modules, forms, procByPtr)
 	resolveGlobalsAndFixups(data2, proj)
 	if err := resolveByValParameters(proj); err != nil {
 		return nil, err
@@ -382,11 +386,7 @@ func ParseProject(f *ne.File, formOpts frm.ExtractOptions) (*Project, error) {
 	return proj, nil
 }
 
-func resolveControlTypes(f *ne.File, proj *Project, formOpts frm.ExtractOptions) {
-	forms, _, err := frm.ExtractForms(f, formOpts)
-	if err != nil {
-		return
-	}
+func resolveControlTypes(proj *Project, forms []*frm.ExtractedForm) {
 	for _, ef := range forms {
 		if ef.Form == nil {
 			continue
@@ -418,206 +418,82 @@ func resolveControlTypes(f *ne.File, proj *Project, formOpts frm.ExtractOptions)
 	}
 }
 
-func resolveModuleEvents(f *ne.File, modules []*Module, procByPtr map[uint16]*Procedure) {
+// resolveModuleEvents names the event procedures of each form module from the
+// event tables of its form and controls. Each table slot indexes the event
+// list of the control's model; procedures bound to unknown slots keep their
+// generic names.
+func resolveModuleEvents(modules []*Module, forms []*frm.ExtractedForm, procByPtr map[uint16]*Procedure) {
 	for _, m := range modules {
 		if !m.IsForm {
 			continue
 		}
-
-		entry, err := f.FindResource(ne.ResTypeRCData, m.FormResourceID)
-		if err != nil {
+		var form *frm.Form
+		for _, ef := range forms {
+			if ef.Form != nil && ef.Ref.Index == m.FormIndex {
+				form = ef.Form
+			}
+		}
+		if form == nil {
 			continue
 		}
-		data, err := f.ReadResourceData(entry)
-		if err != nil || len(data) < 16 {
-			continue
+		bind := func(owner string, isArray bool, b frm.EventBinding) {
+			proc, ok := procByPtr[b.ProcRef]
+			if !ok || proc.ModuleIndex != m.Index || b.Event.Name == "" {
+				return
+			}
+			proc.Name = owner + "_" + b.Event.Name
+			proc.IsEvent = true
+			proc.EventParams = eventParams(b.Event, isArray)
 		}
-
-		// VB3 Form RCData resource layout:
-		// Bytes 0..3: 0xFF, 0xCC, 0x2C, 0x00 (magic)
-		// Byte 4: control count / flags
-		// Bytes 5..8: stream data length (uint32)
-		// Bytes 9..12: form record length (uint32)
-		// Bytes 13..13+formRecLen: Form properties & event table
-		// Bytes 13+formRecLen..: Child control records
-
-		formStartPos := 0
-		formRecLen := len(data)
-
-		if len(data) >= 13 && data[0] == 0xFF && data[1] == 0xCC {
-			formStartPos = 9
-			formRecLen = int(binary.LittleEndian.Uint32(data[9:13]) & 0x7FFFFFFF)
-		} else {
-			formRecLen = int(binary.LittleEndian.Uint32(data[0:4]) & 0x7FFFFFFF)
+		for _, b := range form.Root.Events {
+			bind("Form", false, b)
 		}
-
-		formEndPos := formStartPos + formRecLen
-		if formEndPos > len(data) {
-			formEndPos = len(data)
-		}
-
-		// 1. Scan Form event table inside form record (located at end of form record)
-		for p := formEndPos - 4; p >= formStartPos; p-- {
-			if data[p] == 0xFF {
-				cnt := int(data[p+1])
-				rem := formEndPos - (p + 2 + cnt*2)
-				if cnt > 0 && cnt < 64 && rem >= 0 && rem <= 4 {
-					found := false
-					for slot := 0; slot < cnt; slot++ {
-						w := binary.LittleEndian.Uint16(data[p+2+slot*2 : p+4+slot*2])
-						if w != 0 && (w&1 == 1) {
-							descOff := w & ^uint16(1)
-							if proc, ok := procByPtr[descOff]; ok && proc.ModuleIndex == m.Index {
-								found = true
-								switch slot {
-								case 6:
-									proc.Name = "Form_Load"
-								case 7:
-									proc.Name = "Form_Resize"
-								case 8:
-									proc.Name = "Form_Unload"
-								case 9:
-									proc.Name = "Form_QueryUnload"
-								case 0, 10, 20:
-									proc.Name = "Form_Activate"
-								case 11:
-									proc.Name = "Form_Deactivate"
-								case 1, 12:
-									proc.Name = "Form_Click"
-								case 2, 13:
-									proc.Name = "Form_DblClick"
-								case 19:
-									proc.Name = "Form_MouseDown"
-								case 21:
-									proc.Name = "Form_MouseUp"
-								case 22:
-									proc.Name = "Form_Paint"
-								}
-							}
-						}
-					}
-					if found {
-						break
-					}
-				}
+		for _, c := range form.Controls {
+			for _, b := range c.Events {
+				bind(c.Name, c.IsArray, b)
 			}
-		}
-
-		// 2. Scan Child Control event tables (located at end of control record)
-		pos := formEndPos
-		for pos < len(data) {
-			tag := data[pos]
-			pos++
-			if tag == 4 { // End of Form
-				break
-			}
-			if tag == 2 || tag == 5 {
-				continue
-			}
-			if tag != 1 && tag != 3 {
-				break
-			}
-			if pos+5 > len(data) {
-				break
-			}
-			rawLen := binary.LittleEndian.Uint32(data[pos : pos+4])
-			hasFlags := (rawLen & 0x80000000) != 0
-			recLen := int(rawLen & 0x7FFFFFFF)
-			ctrlID := int(data[pos+4])
-			ctrlStart := pos + 4
-			ctrlEndPos := pos + recLen
-			if ctrlEndPos > len(data) {
-				ctrlEndPos = len(data)
-			}
-
-			cp := pos + 5
-			if hasFlags {
-				cp += 2
-			}
-			if cp < ctrlEndPos {
-				nLen := int(data[cp])
-				cp += 1 + nLen
-			}
-			var typeID byte
-			if cp < ctrlEndPos {
-				typeID = data[cp]
-			}
-
-			// Scan backward from ctrlEndPos for 0xFF event table
-			for p := ctrlEndPos - 4; p >= ctrlStart; p-- {
-				if data[p] == 0xFF {
-					cnt := int(data[p+1])
-					rem := ctrlEndPos - (p + 2 + cnt*2)
-					if cnt > 0 && cnt < 32 && rem >= 0 && rem <= 4 {
-						found := false
-						for slot := 0; slot < cnt; slot++ {
-							w := binary.LittleEndian.Uint16(data[p+2+slot*2 : p+4+slot*2])
-							if w != 0 && (w&1 == 1) {
-								descOff := w & ^uint16(1)
-								proc, ok := procByPtr[descOff]
-								if ok && proc.ModuleIndex == m.Index {
-									found = true
-									evName := "Click"
-									switch typeID {
-									case 0x0B: // Timer
-										evName = "Timer"
-									case 0x07: // ComboBox
-										switch slot {
-										case 0:
-											evName = "Change"
-										case 1:
-											evName = "Click"
-										case 2:
-											evName = "DblClick"
-										case 5:
-											evName = "DropDown"
-										}
-									case 0x09, 0x0A: // HScrollBar / VScrollBar
-										switch slot {
-										case 0:
-											evName = "Change"
-										case 8:
-											evName = "Scroll"
-										}
-									default:
-										switch slot {
-										case 0, 1:
-											evName = "Click"
-										case 8:
-											evName = "MouseDown"
-										case 6:
-											evName = "MouseMove"
-										case 7:
-											evName = "MouseUp"
-										case 2:
-											evName = "Change"
-										case 3:
-											evName = "KeyDown"
-										case 4:
-											evName = "KeyPress"
-										case 5:
-											evName = "KeyUp"
-										}
-									}
-									ctrlName := fmt.Sprintf("control%d", ctrlID)
-									if m.ControlByIndex != nil {
-										if mapped, ok := m.ControlByIndex[ctrlID]; ok && mapped != "" {
-											ctrlName = mapped
-										}
-									}
-									proc.Name = fmt.Sprintf("%s_%s", ctrlName, evName)
-								}
-							}
-						}
-						if found {
-							break
-						}
-					}
-				}
-			}
-			pos = ctrlEndPos
 		}
 	}
+}
+
+// eventParams returns the parameter list of an event procedure. Handlers of
+// control array members receive the member's Index first. Custom controls
+// describe their event parameters in a profile string; the parameters of the
+// built-in events are those documented for Visual Basic 3.
+func eventParams(ev vbx.Event, isArray bool) []EventParam {
+	var params []EventParam
+	if isArray {
+		params = append(params, EventParam{"Index", "Integer"})
+	}
+	switch defs, known := eventParamDefs[ev.Name]; {
+	case ev.Profile != "":
+		params = append(params, parseParamProfile(ev.Profile)...)
+	case known && len(defs) == ev.Params:
+		params = append(params, defs...)
+	default:
+		for i := 1; i <= ev.Params; i++ {
+			params = append(params, EventParam{fmt.Sprintf("p%d", i), "Variant"})
+		}
+	}
+	return params
+}
+
+// parseParamProfile parses a parameter profile such as
+// "Button As Integer, Shift As Integer".
+func parseParamProfile(profile string) []EventParam {
+	var params []EventParam
+	for _, decl := range strings.Split(profile, ",") {
+		fields := strings.Fields(decl)
+		if len(fields) == 0 {
+			continue
+		}
+		p := EventParam{Name: fields[0], Type: "Variant"}
+		if len(fields) >= 3 && strings.EqualFold(fields[1], "As") {
+			p.Type = strings.Join(fields[2:], " ")
+		}
+		params = append(params, p)
+	}
+	return params
 }
 
 // declarationStringBase returns the base that external procedure descriptors

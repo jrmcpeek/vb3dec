@@ -123,8 +123,18 @@ type ControlNode struct {
 	ID         int            // 1-based control ID (0 for form)
 	Name       string         // e.g. "frm1", "control1"
 	TypeName   string         // e.g. "CommandButton", "Label", "MMControl"
+	IsArray    bool           // Member of a control array
+	ArrayIndex int            // Control array index (when IsArray)
 	Properties []Property     // Ordered property assignments
+	Events     []EventBinding // Event procedures bound to this control
 	Children   []*ControlNode // Nested controls (for containers like Frame, PictureBox)
+}
+
+// EventBinding ties an event of a form or control to its event procedure.
+type EventBinding struct {
+	Slot    int       // Index in the control model's event list
+	Event   vbx.Event // Event definition (Name is empty if the slot is unknown)
+	ProcRef uint16    // Procedure descriptor offset of the handler
 }
 
 // FRXAsset represents an embedded icon or picture extracted from a form stream.

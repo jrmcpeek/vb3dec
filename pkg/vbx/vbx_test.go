@@ -58,4 +58,26 @@ func TestParseFileMCI(t *testing.T) {
 	if p := m.Props[propIndex(m, "Left")]; p.Std != vbx.StdLeft {
 		t.Errorf("MMControl.Left should be the standard Left property, got %+v", p)
 	}
+	if len(m.Events) != 40 {
+		t.Fatalf("expected 40 MMControl events, got %d", len(m.Events))
+	}
+	if e := m.Events[4]; e.Name != "Done" || e.Params != 1 || e.Profile != "NotifyCode As Integer" {
+		t.Errorf("MMControl event slot 4 = %+v, want Done(NotifyCode As Integer)", e)
+	}
+}
+
+func TestBuiltinFormEventSlots(t *testing.T) {
+	if len(vbx.StdEvents) != 17 || vbx.StdEvents[0].Name != "Click" || vbx.StdEvents[16].Name != "Change" {
+		t.Fatalf("unexpected standard events: %+v", vbx.StdEvents)
+	}
+	events := vbx.BuiltinModels["Form"].Events
+	want := map[int]string{6: "Load", 8: "Unload", 9: "QueryUnload", 12: "Click", 19: "MouseDown", 20: "MouseMove", 22: "Paint"}
+	for slot, name := range want {
+		if slot >= len(events) || events[slot].Name != name {
+			t.Errorf("Form event slot %d is not %s", slot, name)
+		}
+	}
+	if e := events[9]; e.Params != 2 {
+		t.Errorf("QueryUnload has %d parameters, want 2", e.Params)
+	}
 }

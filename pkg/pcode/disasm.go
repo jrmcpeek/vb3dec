@@ -12,12 +12,14 @@ import (
 	"vb3dec/pkg/win1252"
 )
 
-type eventParamDef struct {
+// EventParam is one parameter of an event procedure.
+type EventParam struct {
 	Name string
 	Type string
 }
 
-var eventParamDefs = map[string][]eventParamDef{
+// eventParamDefs lists the documented parameters of the built-in VB3 events.
+var eventParamDefs = map[string][]EventParam{
 	"MouseDown": {
 		{"Button", "Integer"},
 		{"Shift", "Integer"},
@@ -70,6 +72,18 @@ var eventParamDefs = map[string][]eventParamDef{
 	},
 	"LinkError": {
 		{"LinkErr", "Integer"},
+	},
+	"LinkExecute": {
+		{"CmdStr", "String"},
+		{"Cancel", "Integer"},
+	},
+	"Error": {
+		{"DataErr", "Integer"},
+		{"Response", "Integer"},
+	},
+	"Validate": {
+		{"Action", "Integer"},
+		{"Save", "Integer"},
 	},
 }
 
@@ -1354,7 +1368,7 @@ func (s *procDisasmState) getVarName(offset uint16) string {
 	}
 
 	var name string
-	isEvent := strings.Contains(s.proc.Name, "_")
+	isEvent := s.proc.IsEvent
 	var modBytes []byte
 	if s.proc != nil && s.proj != nil && s.proc.ModuleIndex > 0 && s.proc.ModuleIndex <= len(s.proj.Modules) {
 		modBytes = s.proj.Modules[s.proc.ModuleIndex-1].ModBytes
@@ -1544,18 +1558,13 @@ func (s *procDisasmState) scanPass() {
 	}
 
 	// Classify parameter variables:
-	isEvent := strings.Contains(s.proc.Name, "_")
+	isEvent := s.proc.IsEvent
 	numParams := int(s.proc.PubOrPriv >> 9)
 	declaredParams := numParams
-	var evParams []eventParamDef
+	var evParams []EventParam
 	if isEvent {
-		evSuffix := s.proc.Name[strings.LastIndex(s.proc.Name, "_")+1:]
-		if defs, ok := eventParamDefs[evSuffix]; ok {
-			evParams = defs
-			numParams = len(defs)
-		} else {
-			numParams = 0
-		}
+		evParams = s.proc.EventParams
+		numParams = len(evParams)
 	}
 
 	allVars := append(varRefs, assignedVars...)
@@ -2650,14 +2659,9 @@ func (s *procDisasmState) renderProcedure() string {
 	}
 	sort.Slice(sortedOffsets, func(i, j int) bool { return sortedOffsets[i] < sortedOffsets[j] })
 
-	isEvent := strings.Contains(s.proc.Name, "_")
-	if isEvent {
-		evSuffix := s.proc.Name[strings.LastIndex(s.proc.Name, "_")+1:]
-		if defs, ok := eventParamDefs[evSuffix]; ok {
-			for _, ep := range defs {
-				paramList = append(paramList, fmt.Sprintf("%s As %s", ep.Name, ep.Type))
-			}
-		}
+	isEvent := s.proc.IsEvent
+	for _, ep := range s.proc.EventParams {
+		paramList = append(paramList, fmt.Sprintf("%s As %s", ep.Name, ep.Type))
 	}
 
 	paramIdx := 0

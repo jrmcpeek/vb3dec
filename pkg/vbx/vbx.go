@@ -65,12 +65,21 @@ func (p Prop) Type() DataType {
 	return DataType(p.Flags & 0x7F)
 }
 
+// Event describes one entry of a control's event list.
+type Event struct {
+	Name    string
+	Params  int    // EVENTINFO.cParms
+	Profile string // Parameter declarations (EVENTINFO.npszParmProf), if provided
+	Std     int    // Standard event index, or -1 for a control-specific event
+}
+
 // Model describes one registered control class.
 type Model struct {
-	Version    uint16 // MODEL.usVersion (VB_VERSION the model targets)
-	DefCtlName string // Default control name, e.g. "Command3D"
-	ClassName  string // Class name, which is the type name stored in form streams
-	Props      []Prop // Property list in property ID order
+	Version    uint16  // MODEL.usVersion (VB_VERSION the model targets)
+	DefCtlName string  // Default control name, e.g. "Command3D"
+	ClassName  string  // Class name, which is the type name stored in form streams
+	Props      []Prop  // Property list in property ID order
+	Events     []Event // Event list in event slot order
 }
 
 // Model field offsets within the CDK MODEL structure.
@@ -78,6 +87,7 @@ const (
 	modelDefCtlNameOff = 0x14
 	modelClassNameOff  = 0x16
 	modelPropListOff   = 0x1A
+	modelEventListOff  = 0x1C
 	modelMinSize       = 0x20
 )
 
@@ -107,7 +117,7 @@ func ParseModels(f *ne.File) ([]*Model, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading data segment %d: %w", seg.Index, err)
 		}
-		for _, m := range ScanSegment(data, StdProps, true) {
+		for _, m := range ScanSegment(data, StdProps, StdEvents, true) {
 			if !isVBXModelVersion(m.Version) {
 				continue
 			}
@@ -133,8 +143,9 @@ func isVBXModelVersion(v uint16) bool {
 // accepted when its default control name is an identifier and its property
 // list is a non-empty, NULL-terminated array of valid property references.
 // requireClass additionally requires the class name to be an identifier;
-// VBRUN300.DLL's built-in models store a class atom there instead.
-func ScanSegment(seg []byte, std []Prop, requireClass bool) []*Model {
+// VBRUN300.DLL's built-in models store a class atom there instead. Standard
+// property and event references resolve through std and stdEvents.
+func ScanSegment(seg []byte, std []Prop, stdEvents []Event, requireClass bool) []*Model {
 	var models []*Model
 	for m := 0; m+modelMinSize <= len(seg); m++ {
 		defName, ok := identifierAt(seg, word(seg, m+modelDefCtlNameOff))
@@ -152,11 +163,13 @@ func ScanSegment(seg []byte, std []Prop, requireClass bool) []*Model {
 		if !ok || len(props) == 0 {
 			continue
 		}
+		events, _ := eventList(seg, word(seg, m+modelEventListOff), stdEvents)
 		models = append(models, &Model{
 			Version:    word(seg, m),
 			DefCtlName: defName,
 			ClassName:  className,
 			Props:      props,
+			Events:     events,
 		})
 	}
 	return models
@@ -184,6 +197,50 @@ func propList(seg []byte, off uint16, std []Prop) ([]Prop, bool) {
 		}
 	}
 	return nil, false
+}
+
+// eventList resolves a NULL-terminated array of event references.
+func eventList(seg []byte, off uint16, std []Event) ([]Event, bool) {
+	var events []Event
+	for pos := int(off); off != 0 && pos+2 <= len(seg); pos += 2 {
+		ref := word(seg, pos)
+		if ref == 0 {
+			return events, true
+		}
+		if idx := int(0xFFFF - ref); idx < len(std) {
+			events = append(events, std[idx])
+			continue
+		}
+		e, ok := EventInfoAt(seg, ref)
+		if !ok || len(events) > 255 {
+			return nil, false
+		}
+		events = append(events, e)
+	}
+	return nil, false
+}
+
+// EventInfoAt decodes an EVENTINFO structure: the name pointer, parameter
+// count, parameter size in words, parameter type list and, for custom
+// controls, the parameter profile string.
+func EventInfoAt(seg []byte, off uint16) (Event, bool) {
+	if int(off)+10 > len(seg) {
+		return Event{}, false
+	}
+	name, ok := identifierAt(seg, word(seg, int(off)))
+	if !ok {
+		return Event{}, false
+	}
+	e := Event{Name: name, Params: int(word(seg, int(off)+2)), Std: -1}
+	if e.Params > 16 {
+		return Event{}, false
+	}
+	if e.Params > 0 {
+		if profile, ok := cStringAt(seg, word(seg, int(off)+8)); ok && strings.Contains(profile, " As ") {
+			e.Profile = profile
+		}
+	}
+	return e, true
 }
 
 // PropInfoAt decodes the leading fields of a PROPINFO structure: the near

@@ -21,7 +21,7 @@ func getTestProject(t *testing.T) (*ne.File, *pcode.Project) {
 		t.Fatalf("Failed to open test NE executable %s: %v", exePath, err)
 	}
 
-	proj, err := pcode.ParseProject(f, frm.ExtractOptions{})
+	proj, err := pcode.ParseProject(f, frm.ExtractOptions{VBXDirs: []string{fixture.Dir(t, fixture.FF)}})
 	if err != nil {
 		t.Fatalf("Failed to parse VB3 project: %v", err)
 	}
@@ -188,13 +188,13 @@ func TestEventParameters(t *testing.T) {
 			}
 			mouseDownCount++
 		}
-		if p.Name == "control39_KeyPress" {
+		if p.Name == "control39_KeyDown" {
 			code, err := d.DisassembleProcedure(p)
 			if err != nil {
-				t.Fatalf("DisassembleProcedure(control39_KeyPress) failed: %v", err)
+				t.Fatalf("DisassembleProcedure(control39_KeyDown) failed: %v", err)
 			}
-			if !strings.Contains(code, "If KeyAscii = 13 Then") {
-				t.Errorf("control39_KeyPress missing 'If KeyAscii = 13 Then':\n%s", code)
+			if !strings.Contains(code, "If KeyCode = 13 Then") {
+				t.Errorf("control39_KeyDown missing 'If KeyCode = 13 Then':\n%s", code)
 			}
 		}
 	}
@@ -1329,15 +1329,15 @@ func TestRemediatedOpcodes(t *testing.T) {
 		return ""
 	}
 
-	// 1. Chr$ in frm8.control39_KeyPress
-	codeKeyPress := getProcCode("frm8", "control39_KeyPress")
+	// 1. Chr$ in frm8.control39_KeyDown
+	codeKeyDown := getProcCode("frm8", "control39_KeyDown")
 	for _, snip := range []string{"Chr$(13)", "Chr$(32)", "Chr$(9)"} {
-		if !strings.Contains(codeKeyPress, snip) {
-			t.Errorf("frm8.control39_KeyPress missing expected snippet: %q", snip)
+		if !strings.Contains(codeKeyDown, snip) {
+			t.Errorf("frm8.control39_KeyDown missing expected snippet: %q", snip)
 		}
 	}
-	if strings.Contains(codeKeyPress, "32 + Chr$") {
-		t.Errorf("frm8.control39_KeyPress contains broken Chr$ addition snippet")
+	if strings.Contains(codeKeyDown, "32 + Chr$") {
+		t.Errorf("frm8.control39_KeyDown contains broken Chr$ addition snippet")
 	}
 
 	// 2. Chr$ in frm2.fn05EA
