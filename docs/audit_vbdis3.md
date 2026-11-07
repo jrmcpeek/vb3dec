@@ -235,6 +235,9 @@ The `vb3dec` engine introduces a dedicated zero-dependency ANSI Windows-1252 tra
 - High-ASCII characters (`0x80..0xFF`) are transcoded to their UTF-8 equivalents.
 - Emitted `.bas` and `.FRM` files are UTF-8, for modern editors and tools; they must be converted back to Windows-1252 before loading them in the VB3 IDE (see [Known Limitations](limitations.md#3-known-approximations)).
 
+### 3.3 Leftover Temporary Scrap Files
+`VBDIS3` created temporary scratch files during decompilation (`VDM101.tmp`, `VDM102.tmp`, etc.) that were left on disk.
+
 ---
 
 ## 4. Missing Feature Strings
