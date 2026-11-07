@@ -232,8 +232,8 @@ A prominent example of this defect occurs in `Module1.bas`:
 **Resolution in `vb3dec`:**
 The `vb3dec` engine introduces a dedicated zero-dependency ANSI Windows-1252 transcoding package (`pkg/win1252`):
 - All string literals in P-code (Opcode Case 8) and form property streams (captions, control texts, tooltips, font names) are decoded through `win1252.Decode` and `win1252.FormatVBString`.
-- High-ASCII characters (`0x80..0xFF`) are transcoded to their UTF-8 equivalents.
-- Emitted `.bas` and `.FRM` files are UTF-8, for modern editors and tools; they must be converted back to Windows-1252 before loading them in the VB3 IDE (see [Known Limitations](limitations.md#3-known-approximations)).
+- High-ASCII characters (`0x80..0xFF`) are transcoded to their Unicode equivalents, so the decompiler works on valid text, and `win1252.Encode` converts them back when the files are written.
+- Emitted `.bas`, `.FRM`, and `.MAK` files are Windows-1252, which the VB3 IDE reads, so `fn00BE` is written as the original bytes `3E 97 97 BB 9B BB`. Modern editors must open them as Windows-1252 to show these characters, or the files can be written in UTF-8 for viewing with `-encoding utf-8`.
 
 ### 3.3 Leftover Temporary Scrap Files
 `VBDIS3` created temporary scratch files during decompilation (`VDM101.tmp`, `VDM102.tmp`, etc.) that were left on disk.

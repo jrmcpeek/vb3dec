@@ -69,7 +69,7 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 		fNameLen := int(stream[p])
 		p++
 		if fNameLen > 0 && p+fNameLen <= formEndPos {
-			name := strings.TrimRight(string(stream[p:p+fNameLen]), "\x00")
+			name := strings.TrimRight(win1252.Decode(stream[p:p+fNameLen]), "\x00")
 			if name != "" {
 				formNode.Name = name
 				form.Name = name
@@ -171,7 +171,7 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 				return nil, nil, fmt.Errorf("control record at offset %d has truncated name", pos)
 			}
 			if nLen > 0 {
-				inlineName = strings.TrimRight(string(stream[cp:cp+nLen]), "\x00")
+				inlineName = strings.TrimRight(win1252.Decode(stream[cp:cp+nLen]), "\x00")
 				cp += nLen
 			}
 		}
@@ -192,7 +192,7 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 			if cp+tLen > ctrlEndPos {
 				return nil, nil, fmt.Errorf("control record at offset %d has truncated type name", pos)
 			}
-			typeName = string(stream[cp : cp+tLen])
+			typeName = win1252.Decode(stream[cp : cp+tLen])
 			cp += tLen
 			model = customModels[strings.ToLower(typeName)]
 		} else {

@@ -9,6 +9,7 @@ import (
 	"vb3dec/pkg/frm"
 	"vb3dec/pkg/ne"
 	"vb3dec/pkg/vbx"
+	"vb3dec/pkg/win1252"
 )
 
 // ror3 performs a 16-bit right rotation by 3 bits.
@@ -531,7 +532,8 @@ func declarationStringBase(data2 []byte) (int, bool) {
 	return pos + 5, true
 }
 
-// pascalStringAt returns the length-prefixed string at off, or "" if it is out of range.
+// pascalStringAt returns the length-prefixed Windows-1252 string at off,
+// decoded to UTF-8, or "" if it is out of range.
 func pascalStringAt(data []byte, off int) string {
 	if off < 0 || off >= len(data) {
 		return ""
@@ -540,7 +542,7 @@ func pascalStringAt(data []byte, off int) string {
 	if off+1+n > len(data) {
 		return ""
 	}
-	return string(data[off+1 : off+1+n])
+	return win1252.Decode(data[off+1 : off+1+n])
 }
 
 // globalObjectTags maps the instance tags of VB3's global objects. Form

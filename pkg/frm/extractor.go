@@ -92,13 +92,15 @@ func ExtractForms(neFile *ne.File, opts ExtractOptions) ([]*ExtractedForm, *Proj
 	return results, proj, nil
 }
 
-// SaveExtractedForms writes the extracted forms (.FRM, .FRX, and optionally .bin and assets) to outDir.
+// SaveExtractedForms writes the extracted forms (.FRM, .FRX, and optionally .bin and assets) to outDir,
+// with .FRM files in Windows-1252.
 func SaveExtractedForms(forms []*ExtractedForm, outDir string, saveRaw bool) error {
-	return SaveExtractedFormsWithAssets(forms, outDir, saveRaw, true, "")
+	return SaveExtractedFormsWithAssets(forms, outDir, saveRaw, true, "", EncodingWindows1252)
 }
 
 // SaveExtractedFormsWithAssets writes extracted forms and allows configuring standalone asset output.
-func SaveExtractedFormsWithAssets(forms []*ExtractedForm, outDir string, saveRaw bool, saveAssets bool, assetsDirOverride string) error {
+// The .FRM text files are written in the given encoding.
+func SaveExtractedFormsWithAssets(forms []*ExtractedForm, outDir string, saveRaw bool, saveAssets bool, assetsDirOverride string, enc TextEncoding) error {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory %s: %w", outDir, err)
 	}
@@ -120,7 +122,7 @@ func SaveExtractedFormsWithAssets(forms []*ExtractedForm, outDir string, saveRaw
 			return fmt.Errorf("invalid form filename %q: %w", ef.Ref.FileName, err)
 		}
 		// Save .FRM text
-		if err := os.WriteFile(frmPath, []byte(ef.TextFRM), 0644); err != nil {
+		if err := WriteTextFile(frmPath, ef.TextFRM, enc); err != nil {
 			return fmt.Errorf("writing %s: %w", frmPath, err)
 		}
 

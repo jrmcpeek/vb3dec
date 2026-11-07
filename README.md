@@ -24,7 +24,7 @@ A decompiler for 16-bit **Visual Basic 3.0** executables, written in pure Go.
 - **Project output**:
   - Appends each form's code to its `.FRM` file, where VB3 expects it, and also writes it to a `.bas` file.
   - Generates a `.MAK` project file with relative paths and copies the `.dll` and `.vbx` files from the executable's directory.
-  - Converts strings from Windows-1252 to UTF-8 (`pkg/win1252`).
+  - Decodes the executable's Windows-1252 strings (`pkg/win1252`) and writes the text files back in Windows-1252, the encoding the VB3 IDE reads, or in UTF-8 for viewing with `-encoding utf-8`.
 
 ---
 
@@ -118,6 +118,7 @@ Custom control (`.VBX`) files are looked up in the executable's directory; witho
 | `-assets-dir <dir>` | `<out>/assets` | Output directory for those files. |
 | `-names <dir>` | | Directory of control name files (`frm1.FRM.txt`, ...). Line *n* names control *n*; the first line is the form. |
 | `-raw` | `false` | Also write the raw form streams (`.raw.bin`) for debugging. |
+| `-encoding <name>` | `windows-1252` | Encoding of the `.FRM`, `.bas`, and `.MAK` files: `windows-1252`, which the VB3 IDE reads, or `utf-8`, for viewing with modern tools only. |
 
 ### Output
 
@@ -130,7 +131,9 @@ The output directory contains:
 - `assets/`: the pictures and icons from the `.FRX` files as standalone files.
 - The `.DLL` and `.VBX` files copied from the executable's directory.
 
-Text files are UTF-8 with CRLF line endings. To work on the project, open the `.MAK` file in Visual Basic 3.0 under 16-bit Windows (Windows 3.1 or Windows 95/98) or an emulator such as 86Box or DOSBox-X, after converting non-ASCII text back to Windows-1252 (see [Known Limitations](docs/limitations.md#3-known-approximations)).
+Text files are Windows-1252 with CRLF line endings, as VB3 writes them. To work on the project, open the `.MAK` file in Visual Basic 3.0 under 16-bit Windows (Windows 3.1 or Windows 95/98) or an emulator such as 86Box or DOSBox-X. To read them in a modern editor, open them as Windows-1252; otherwise non-ASCII characters, such as the `«` and `»` in `FF.EXE`'s chat banners, show as invalid characters.
+
+To read or diff the output with modern tools instead, run with `-encoding utf-8`. Do not load a project written this way into VB3: it shows each non-ASCII character as two or three garbled ones, and saving the files there keeps the damage. Decompile again without the flag for VB3.
 
 ### Example Output
 

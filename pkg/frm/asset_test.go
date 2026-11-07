@@ -130,7 +130,7 @@ func TestSaveExtractedFormsRejectsEscapingNames(t *testing.T) {
 	forms := []*frm.ExtractedForm{
 		{Ref: frm.FormRef{FileName: `..\escaped.FRM`}, TextFRM: "VERSION 2.00\r\n"},
 	}
-	if err := frm.SaveExtractedFormsWithAssets(forms, tempDir, false, false, ""); err == nil {
+	if err := frm.SaveExtractedFormsWithAssets(forms, tempDir, false, false, "", frm.EncodingWindows1252); err == nil {
 		t.Fatal("expected path traversal filename to be rejected")
 	}
 }

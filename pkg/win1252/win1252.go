@@ -1,6 +1,10 @@
 package win1252
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
 
 // win1252ToRune maps Windows-1252 bytes 0x80..0xFF to Unicode code points.
 var win1252ToRune = [128]rune{
@@ -49,6 +53,56 @@ var win1252ToRune = [128]rune{
 	0x00E8, 0x00E9, 0x00EA, 0x00EB, 0x00EC, 0x00ED, 0x00EE, 0x00EF,
 	0x00F0, 0x00F1, 0x00F2, 0x00F3, 0x00F4, 0x00F5, 0x00F6, 0x00F7,
 	0x00F8, 0x00F9, 0x00FA, 0x00FB, 0x00FC, 0x00FD, 0x00FE, 0x00FF,
+}
+
+// runeToWin1252 is the inverse of win1252ToRune. It includes the five
+// unassigned bytes (0x81, 0x8D, 0x8F, 0x90, 0x9D), which Decode maps to the
+// C1 control characters of the same value, so that every byte round-trips.
+var runeToWin1252 = func() map[rune]byte {
+	m := make(map[rune]byte, len(win1252ToRune))
+	for i, r := range win1252ToRune {
+		m[r] = byte(0x80 + i)
+	}
+	return m
+}()
+
+// UnrepresentableError reports text that has no Windows-1252 encoding.
+type UnrepresentableError struct {
+	Offset  int  // Byte offset of the character in the UTF-8 input
+	Rune    rune // The character that cannot be encoded
+	Invalid bool // The input is not valid UTF-8 at Offset
+}
+
+func (e *UnrepresentableError) Error() string {
+	if e.Invalid {
+		return fmt.Sprintf("invalid UTF-8 at byte offset %d", e.Offset)
+	}
+	return fmt.Sprintf("character %q (U+%04X) at byte offset %d cannot be encoded in Windows-1252", e.Rune, e.Rune, e.Offset)
+}
+
+// Encode converts a UTF-8 string to Windows-1252 bytes, the inverse of
+// Decode. It returns an *UnrepresentableError for invalid UTF-8 or for a
+// character outside Windows-1252.
+func Encode(s string) ([]byte, error) {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); {
+		if s[i] < 0x80 {
+			out = append(out, s[i])
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size <= 1 {
+			return nil, &UnrepresentableError{Offset: i, Rune: utf8.RuneError, Invalid: true}
+		}
+		b, ok := runeToWin1252[r]
+		if !ok {
+			return nil, &UnrepresentableError{Offset: i, Rune: r}
+		}
+		out = append(out, b)
+		i += size
+	}
+	return out, nil
 }
 
 // Decode converts raw Windows-1252 (ANSI) bytes into a valid UTF-8 string.

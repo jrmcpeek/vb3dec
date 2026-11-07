@@ -1,6 +1,7 @@
 package pcode_test
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
 	"testing"
@@ -265,6 +266,42 @@ func TestSampleCallStatementArguments(t *testing.T) {
 				if !strings.Contains(all.String(), w) {
 					t.Errorf("decompiled code lacks %q", w)
 				}
+			}
+		})
+	}
+}
+
+// TestSampleCodeEncodesAsWindows1252 requires the decompiled code of every
+// sample to be representable in Windows-1252, the encoding the VB3 IDE reads,
+// and FF.EXE's chat banners to come out as their original ANSI bytes.
+func TestSampleCodeEncodesAsWindows1252(t *testing.T) {
+	samples := []struct{ dir, exe string }{
+		{fixture.FF, "FF.EXE"},
+		{fixture.Bascode, "BASCODE.EXE"},
+		{fixture.Empire, "EMPIRE.EXE"},
+	}
+	banner := []byte{0xAB, 0x8B, 0xAB, 0x97, 0x97, '<'} // «‹«——<
+	for _, s := range samples {
+		t.Run(s.dir, func(t *testing.T) {
+			proj := parseSample(t, s.dir, s.exe)
+			d := pcode.NewDisassembler(proj)
+			foundBanner := false
+			for _, m := range proj.Modules {
+				code, err := d.DisassembleModule(m)
+				if err != nil {
+					t.Fatalf("DisassembleModule(%s): %v", m.Name, err)
+				}
+				data, err := frm.EncodeText(code, frm.EncodingWindows1252)
+				if err != nil {
+					t.Errorf("EncodeText(%s): %v", m.Name, err)
+					continue
+				}
+				if bytes.Contains(data, banner) {
+					foundBanner = true
+				}
+			}
+			if s.dir == fixture.FF && !foundBanner {
+				t.Errorf("no module contains the Windows-1252 banner bytes % X", banner)
 			}
 		})
 	}

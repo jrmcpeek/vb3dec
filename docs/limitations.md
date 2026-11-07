@@ -43,7 +43,6 @@ Control array members are recognized from their form records, and their event pr
 
 ## 3. Known Approximations
 
-- **Text encoding:** Output files are UTF-8, but the VB3 IDE reads Windows-1252. Non-ASCII characters, such as the `«` and `»` in `FF.EXE`'s chat banners, must be converted back to Windows-1252 before the project is loaded in VB3.
 - **Variable types:** Types are inferred from P-code variable references and from how values are used, not from stack slot sizes. Type conversions contribute only for the conversion tokens the samples use.
 - **Property names in code:** A property is named from the model of the object it applies to: a form, a control, a global object (`App`, `Clipboard`, `Printer`, `Screen`), or a parameter that every call site passes the same kind of form or control (declared `As Form` or `As Control`). For an object of unknown type, such as a parameter that receives different control types or a variable assigned with `Set`, a generic mapping guesses the name. No sample program has such a reference.
 - **Form window bounds:** Forms store their client area. The outer `Left`, `Top`, `Width`, and `Height` written to `.FRM` files are derived from it with fixed border and caption sizes for the form's `BorderStyle`.

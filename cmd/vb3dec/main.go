@@ -22,6 +22,7 @@ func main() {
 	rawFlag := flag.Bool("raw", false, "Also dump raw binary form streams (.raw.bin)")
 	assetsFlag := flag.Bool("assets", true, "Extract standalone resource files (.ico, .bmp, .gif, etc.) from .FRX containers")
 	assetsDirFlag := flag.String("assets-dir", "", "Custom directory for standalone assets (default: <out>/assets)")
+	encodingFlag := flag.String("encoding", "windows-1252", "Encoding of the .FRM, .BAS and .MAK files: windows-1252 (for loading in VB3) or utf-8 (for viewing with modern tools only)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Visual Basic 3 Decompiler (vb3dec)\n\n")
@@ -43,9 +44,19 @@ func main() {
 		outDir = flag.Arg(1)
 	}
 
+	textEnc, err := frm.ParseTextEncoding(*encodingFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: -encoding: %v\n", err)
+		os.Exit(2)
+	}
+
 	fmt.Printf("Visual Basic 3 Decompiler (vb3dec)\n")
 	fmt.Printf("Target: %s\n", targetExe)
-	fmt.Printf("Output: %s\n\n", outDir)
+	fmt.Printf("Output: %s\n", outDir)
+	if textEnc != frm.EncodingWindows1252 {
+		fmt.Printf("Encoding: %s (for viewing only; VB3 reads Windows-1252)\n", textEnc)
+	}
+	fmt.Println()
 
 	f, err := ne.Open(targetExe)
 	if err != nil {
@@ -88,7 +99,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err := frm.SaveExtractedFormsWithAssets(extracted, outDir, *rawFlag, *assetsFlag, *assetsDirFlag); err != nil {
+		if err := frm.SaveExtractedFormsWithAssets(extracted, outDir, *rawFlag, *assetsFlag, *assetsDirFlag, textEnc); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving forms to %s: %v\n", outDir, err)
 			os.Exit(1)
 		}
@@ -172,7 +183,7 @@ func main() {
 					sb.WriteString("\n")
 				}
 				globalsPath := filepath.Join(outDir, "Globals.bas")
-				if err := os.WriteFile(globalsPath, []byte(frm.ToCRLF(sb.String())), 0644); err != nil {
+				if err := frm.WriteTextFile(globalsPath, sb.String(), textEnc); err != nil {
 					fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", globalsPath, err)
 					hadErrors = true
 				}
@@ -194,7 +205,7 @@ func main() {
 
 				fileName := mod.Name + ".bas"
 				outPath := filepath.Join(outDir, fileName)
-				if err := os.WriteFile(outPath, []byte(frm.ToCRLF(code)), 0644); err != nil {
+				if err := frm.WriteTextFile(outPath, code, textEnc); err != nil {
 					fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", outPath, err)
 					hadErrors = true
 					continue
@@ -205,11 +216,15 @@ func main() {
 					frmPath := filepath.Join(outDir, mod.FileName)
 					if data, err := os.ReadFile(frmPath); err == nil {
 						if !frm.HasCode(string(data)) {
+							// The .FRM was written in textEnc; append the code in the same encoding.
 							formCode, err := d.DisassembleFormCode(mod)
 							if err != nil {
 								fmt.Fprintf(os.Stderr, "Error decompiling form code %s: %v\n", mod.Name, err)
 								hadErrors = true
-							} else if err := os.WriteFile(frmPath, append(data, []byte(frm.ToCRLF(formCode))...), 0644); err != nil {
+							} else if encoded, err := frm.EncodeText(formCode, textEnc); err != nil {
+								fmt.Fprintf(os.Stderr, "Error encoding form code for %s as %s: %v\n", frmPath, textEnc, err)
+								hadErrors = true
+							} else if err := os.WriteFile(frmPath, append(data, encoded...), 0644); err != nil {
 								fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", frmPath, err)
 								hadErrors = true
 							}
@@ -293,7 +308,7 @@ func main() {
 			makLines = append(makLines, "ExeName="+win1252.QuoteVBString(baseExe))
 
 			makContent := strings.Join(makLines, "\r\n") + "\r\n"
-			if err := os.WriteFile(makPath, []byte(makContent), 0644); err != nil {
+			if err := frm.WriteTextFile(makPath, makContent, textEnc); err != nil {
 				fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", makPath, err)
 				hadErrors = true
 			} else {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"vb3dec/pkg/ne"
+	"vb3dec/pkg/win1252"
 )
 
 // FormRef describes an embedded form discovered in the project structure.
@@ -50,7 +51,7 @@ func ParseVBProject(f *ne.File) (*ProjectInfo, error) {
 	// M1275 (2), M127E (2), StartupFormIdx (2), VBTitle (9), ProjTitleLen (2), HelpFileLen (2)
 	startupFormIdx := int(int16(binary.LittleEndian.Uint16(data[4:6])))
 	vbTitleRaw := bytes.TrimRight(data[6:15], "\x00")
-	vbTitle := string(vbTitleRaw)
+	vbTitle := win1252.Decode(vbTitleRaw)
 
 	projTitleLen := int(binary.LittleEndian.Uint16(data[15:17]))
 	helpFileLen := int(binary.LittleEndian.Uint16(data[17:19]))
@@ -58,7 +59,7 @@ func ParseVBProject(f *ne.File) (*ProjectInfo, error) {
 	pos := 19
 	var projTitle string
 	if projTitleLen > 0 && pos+projTitleLen <= len(data) {
-		projTitle = strings.TrimRight(string(data[pos:pos+projTitleLen]), "\x00")
+		projTitle = strings.TrimRight(win1252.Decode(data[pos:pos+projTitleLen]), "\x00")
 		pos += projTitleLen
 	}
 	if helpFileLen > 0 && pos+helpFileLen <= len(data) {
@@ -92,12 +93,12 @@ func ParseVBProject(f *ne.File) (*ProjectInfo, error) {
 				extraLen := int(data[pos])
 				pos++
 				if pos+extraLen <= len(data) {
-					nameStr = strings.TrimRight(string(data[pos:pos+extraLen]), "\x00")
+					nameStr = strings.TrimRight(win1252.Decode(data[pos:pos+extraLen]), "\x00")
 					pos += extraLen
 				}
 			}
 		} else if nameLen > 0 && pos+nameLen <= len(data) {
-			nameStr = strings.TrimRight(string(data[pos:pos+nameLen]), "\x00")
+			nameStr = strings.TrimRight(win1252.Decode(data[pos:pos+nameLen]), "\x00")
 			pos += nameLen
 		}
 
@@ -203,7 +204,7 @@ func readNameTable(f *ne.File, resID uint16) []string {
 		if pos+n > len(data) {
 			break
 		}
-		names = append(names, string(data[pos:pos+n]))
+		names = append(names, win1252.Decode(data[pos:pos+n]))
 		pos += n
 	}
 	return names
