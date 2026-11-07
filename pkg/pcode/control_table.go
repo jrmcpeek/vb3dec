@@ -1,6 +1,7 @@
 package pcode
 
-// controlTokenData contains the 32514 bytes of VBDIS_ControlToken from VBDIS3X.DAT
+// controlTokenData contains VBDIS_ControlToken from VBDIS3X.DAT (32511 bytes,
+// three per flag token) followed by the 3 bytes that follow it in the file,
 // indexed by 0-based token offset (pToken-1).
 var controlTokenData = [32514]byte{
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

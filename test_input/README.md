@@ -25,7 +25,7 @@ test_input/
 
 - **`ff/FF.DLL`** is the Final Fantasy Extreme companion library. It is copied into generated project output but is not required to parse the executable.
 - **`ff/MCI.VBX`** is the Microsoft Multimedia Control used by `FF.EXE`; its control model is read to decode `MMControl` properties and events.
-- **`ff/VBRUN300.DLL`** is Microsoft's Visual Basic 3 runtime. The decompiler neither loads nor executes it; `cmd/vbrunprops` reads its built-in control models to regenerate `pkg/vbx/vbrun_tables.go`.
+- **`ff/VBRUN300.DLL`** is Microsoft's Visual Basic 3 runtime. The decompiler neither loads nor executes it; `cmd/vbrunprops` reads its control and global object models to regenerate `pkg/vbx/vbrun_tables.go`.
 
 ## Checksums (SHA-256)
 

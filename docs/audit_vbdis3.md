@@ -2,11 +2,9 @@
 
 ## Executive Summary
 
-An in-depth architectural audit of legacy 16-bit Visual Basic 3 decompilation tooling—specifically Hans-Peter Diettrich's foundational *Visual Basic Discompiler* (VBDIS 3.67e)—was conducted to analyze its internal algorithms, failure modes, and table parsing mechanics.
+This audit examines Hans-Peter Diettrich's *Visual Basic Discompiler* (VBDIS 3.67e): why it decompiled the protected sample `FF.EXE` incompletely, omitting 70 procedures across four forms, and why its output needed substantial manual fixes before the 16-bit VB3 compiler would accept it.
 
-The audit documents why raw legacy decompilation was incomplete for the protected sample (omitting 70 procedures across four forms) and why its output required substantial manual patching before it could be tested with the 16-bit VB3 compiler.
-
-Our analysis identified the root cause of the missing code: a bit-rotation arithmetic mismatch during relocation traversal in `MODULE10.BAS`, combined with rigid segment assumptions. By addressing these issues, `vb3dec` discovers, disassembles, and reconstructs the 191 local bytecode procedures observed across the 11 modules and 14 code segments in the target binary, including the feature strings (`'mimic'`, `'morph'`, and `'esper'`).
+The missing code comes from a bit-rotation mismatch during relocation traversal in `MODULE10.BAS`, combined with fixed segment assumptions. `vb3dec` avoids both and recovers all 191 bytecode procedures in the executable's 10 modules and 14 code segments, including those containing the feature strings `mimic`, `morph`, and `esper`.
 
 ---
 
@@ -21,7 +19,7 @@ l00A2 = RotateRight3(l00A4)
 Get hVBFile, VBAbsOffs(l00A2), l00AC
 NamesLookUpTbl(l00A2 + gc0E24) = gSubroutines
 ```
-The `RotateRight3` algorithm shifts the 16-bit descriptor offset right by 3, while rotating the lowest 3 bits into bits 13–15 (`((v And 6) * &H1000)`):
+`RotateRight3` shifts the 16-bit descriptor pointer right by 3 and moves its bits 1–2, which select the descriptor's segment, into bits 13–14:
 ```vb
 Function RotateRight3(pv0048%) As Integer
   RotateRight3 = (UDiv(pv0048, 8) And &H1FFF&) + ((pv0048 And 6) * &H1000)
@@ -44,11 +42,11 @@ Loop Until l0050 = &HFFFF
 ```
 
 **Consequence:**
-- When descriptor base offsets have non-zero rotation bits (`offset & 6 != 0`), the computed index diverges.
-- For example, a relocation pointing to Segment 5 starting at offset `0x09B6` has descriptor base `0x09B6 - 0x26 = 0x0990`.
-- In `sub0986`, `RotateRight3(0x0996)` yields `0xC132` (high bits `0xC000` set).
-- In `Applyreloc1`, `(0x09B6 \ 8) - 4` computes `0x0132` (high bits `0x0000`).
-- `NamesLookUpTbl(0x0132)` is `0` (not `gc0E1A`).
+- When a descriptor pointer has segment bits set (`pointer And 6 <> 0`), the two indexes differ.
+- For example, a relocation chain entry at offset `0x09B6` belongs to the descriptor at `0x09B6 - 0x26 = 0x0990`, whose pointer is `0x0996`.
+- In `sub0986`, `RotateRight3(&H0996)` yields `&H6132` (segment bits `&H6000`).
+- In `Applyreloc1`, `(&H09B6 \ 8) - 4` yields `&H0132` (no segment bits).
+- `NamesLookUpTbl(&H0132)` is `0` (not `gc0E1A`).
 - The condition `If NamesLookUpTbl(l0046) <> gc0E1A` fails immediately, calls `MakeErrBeep`, and **aborts the entire relocation chain**.
 - `g_TKStruct(...).segm0` is never set (remains `0`).
 - When `DecompileSubroutine` subsequently runs:
@@ -67,7 +65,7 @@ In `MODULE10.BAS` (`DoDecompilation`):
 ScanGlobalData
 ReDim NamesLookUpTbl(curSegSize \ 8)
 ```
-When Segment 3 has `curSegSize = 12424` (`12424 \ 8 = 1553`), keys with rotated high bits like `0xC019` (49177) exceed the array bounds. In a standard VB3 runtime environment without error suppression, this triggers a fatal `Subscript out of range` error.
+When Segment 3 has `curSegSize = 12424` (`12424 \ 8 = 1553`), keys with segment bits, such as `&H6132` (24882), exceed the array bounds. In a standard VB3 runtime environment without error suppression, this triggers a fatal `Subscript out of range` error.
 
 ### 1.3 Segment Masking in `VBAbsOffs`
 In `MODULE17.BAS`:
@@ -123,34 +121,26 @@ In `MODULE20.BAS` (`Sub Create_MAK_File`), `VBDIS3` constructed project `.MAK` f
 - **`main.txt` as a Code Module:**
   VBDIS3 dumped project-wide global definitions into `main.txt` and literally wrote `main.txt` into the `.MAK` file. While VB3's `.MAK` loader treats any file not ending in `.FRM` or `.VBX` as Basic code regardless of extension, standard VB3 conventions require `.BAS` modules. `vb3dec` replaces this with a canonical `Globals.bas` module.
 - **Hardcoded Absolute Host System Paths for VBXs:**
-  `VBDIS3` inspected the running machine's `C:\WINDOWS\system\` directory during decompilation and hardcoded `C:\WINDOWS\system\MCI.VBX` into the `.MAK` file. When opened on any machine without that exact 16-bit directory path, VB3 errors on project load. `vb3dec` extracts custom VBX library names directly from the executable's manifest and emits clean relative paths (`MCI.VBX`).
+  `VBDIS3` inspected the running machine's `C:\WINDOWS\system\` directory during decompilation and hardcoded `C:\WINDOWS\system\MCI.VBX` into the `.MAK` file. On any machine without that exact path, VB3 fails to load the project. `vb3dec` reads the custom control names from the executable and writes them as relative paths (`MCI.VBX`).
 - **`ProjWinSize` / `ProjWinShow` IDE Artifacts:**
   In `MODULE20.BAS`, `VBDIS3` opened `autoload.mak` (the VB3 IDE's default project template on the host machine) and scraped `ProjWinSize=152,402,248,215`. These coordinates are not present in compiled executables; they are user-preference window positions for the VB3 Project Window. `vb3dec` writes the same values as fixed defaults rather than reading them from the host machine.
 
-### 1.8 Flawed Local Variable Type Inference vs. Physical Stack Frame Allocations
+### 1.8 Local Variable Declarations
 
-When declaring local variables (`Dim lXXXX`), `VBDIS3.67e` exhibits two pervasive defects:
-1. **False Variant Inference (`Dim lXXXX As Variant ' 86`):**
-   In expressions assigning arithmetic results to local variables (e.g. `l0110 = gv0074(m001A, 25) + 14`), `VBDIS3` encounters intermediate P-code coercion tokens (such as `0x0EB0` `C<typ>`). In `MODULE11.BAS` and `MODULE14.BAS`, `VBDIS3` misinterprets this opcode as a coercion to `Variant` (type code `0x06`). It tags the destination variable with type byte `0x86` (`0x80` local variable flag | `0x06` Variant), emitting `Dim l0110 As Variant ' 86`.
-2. **Missing Loop Variable Inference (`Dim lYYYY ' 80`):**
-   In `For` loops (e.g. `For l0114 = 1 To 100 Step 1`), `VBDIS3`'s type signature lookup does not constrain the loop counter variable from its integer start/end bounds. Because no typing rule fires, the variable's type entry remains `0x00`. `DetermDeclareType` in `MODULE14.BAS` defaults untyped variables to emitting no type clause, emitting `Dim l0114 ' 80`.
+`VBDIS3.67e` writes its internal type byte as a comment after each local declaration, and leaves loop counters untyped. In `control12_Click` of `frm6`:
+```vb
+Dim l0110 As Variant ' 86
+Dim l0114 ' 80
+...
+l0110 = gv0074(m001A, 25) + 14
+For l0114 = 1 To 100 Step 1
+```
+- `l0110` receives a value converted by token `0x0EB0`, which converts an `Integer` to a `Variant`; the type byte `0x86` is the local variable flag `0x80` with type `0x06` (`Variant`).
+- `l0114` gets no type rule, so its type byte stays `0x80` and the declaration has no type, although its loop bounds are integers.
 
-**Binary Ground Truth (Stack Frame Allocations in `modBytes`):**
-In compiled 16-bit Visual Basic 3 executables, procedure stack frames are explicitly laid out in the module descriptor stream (`modBytes` in `RT_RCDATA ID 2`):
-- For `control12_Click` in `frm6`:
-  - `l0110` is allocated at BP - 38 (`0xFFDA`).
-  - `l0114` is allocated at BP - 40 (`0xFFD8`).
-- The distance between `l0110` and `l0114` is exactly **2 bytes** (`(-38) - (-40) = 2`).
-- In 16-bit Visual Basic 3, a `Variant` structure requires **16 bytes** (2 bytes `VARTYPE` + 6 bytes reserved + 8 bytes data payload). It is physically impossible to fit a 16-byte Variant into a 2-byte stack slot.
-- The 2-byte slot allocation in the binary definitively proves that the VB3 compiler allocated **16-bit Integers** for both variables, not Variants.
-- This pattern recurs across click handlers where pairs of variables allocated at BP - 38 and BP - 40 were consistently misdecompiled by `VBDIS3` as `Variant` (`' 86`) and untyped (`' 80`).
+The procedure's stack frame in the module data (`modBytes` in `RT_RCDATA` 2) places `l0114` at BP − 40 and `l0110` at BP − 38, so `l0114` occupies 2 bytes: it is an `Integer`.
 
-**Resolution in `vb3dec`:**
-The `vb3dec` engine applies semantic type propagation across:
-1. Array index usage (`gv00D4(l0114, l0110)` marks both index operands as `Integer`).
-2. Numeric loop bounds (`For l0114 = 1 To 100 Step 1` infers `Integer`).
-3. Integer array arithmetic (`gv0074(...) + 14` infers `Integer`).
-This produces `Dim l0110 As Integer` and `Dim l0114 As Integer`, accurately reflecting both the semantic intent and the physical 2-byte stack frame allocation.
+**Resolution in `vb3dec`:** `vb3dec` infers types from the data types recorded in variable references and from how values are used, such as numeric loop bounds, and writes no type comments. It declares `l0114 As Integer`. Like `VBDIS3`, it reads `0x0EB0` as a conversion to `Variant`, so `l0110` is declared without a type.
 
 ---
 
@@ -242,70 +232,40 @@ A prominent example of this defect occurs in `Module1.bas`:
 **Resolution in `vb3dec`:**
 The `vb3dec` engine introduces a dedicated zero-dependency ANSI Windows-1252 transcoding package (`pkg/win1252`):
 - All string literals in P-code (Opcode Case 8) and form property streams (captions, control texts, tooltips, font names) are decoded through `win1252.Decode` and `win1252.FormatVBString`.
-- High-ASCII characters (`0x80..0xFF`) are accurately transcoded to standard multi-byte UTF-8 representations.
-- Emitted `.BAS` and `.FRM` files are written as UTF-8 documents for use in modern editors and command-line tools.
-
-### 3.3 Hardcoded Absolute System Paths in Project Files
-In `FF.MAK`, `VBDIS3` emitted absolute machine paths:
-```diff
---- Legacy VBDIS3 Output (Project.MAK)
-+++ Clean VB3 Project File
--C:\WINDOWS\system\MCI.VBX
-+MCI.VBX
-```
-This broke project loading whenever the development environment was relocated.
-
-### 3.4 Leftover Temporary Scrap Files
-`VBDIS3` created temporary scratch files during decompilation (`VDM101.tmp`, `VDM102.tmp`, etc.) that were left on disk.
+- High-ASCII characters (`0x80..0xFF`) are transcoded to their UTF-8 equivalents.
+- Emitted `.bas` and `.FRM` files are UTF-8, for modern editors and tools; they must be converted back to Windows-1252 before loading them in the VB3 IDE (see [Known Limitations](limitations.md#3-known-approximations)).
 
 ---
 
-## 4. Dark Matter & Missing Strings Coverage Analysis
+## 4. Missing Feature Strings
 
-Missing feature strings (`'mimic'`, `'morph'`, and `'esper'`) were previously unaccounted for in legacy decompiled output.
+The feature strings `mimic`, `morph`, and `esper` were largely missing from the legacy output.
 
-### 4.1 Root Cause of Missing Feature Strings
-In `VBDIS3.67e`:
-- Only 121 procedures were emitted (Module 1, Form 5, Form 6, Form 7, Form 8, Form 9).
-- Forms 1, 2, 3, and 4 (comprising 70 procedures) were completely dropped due to the bit-rotation bug described in Section 1.1.
-- These dropped procedures were located in **Segments 5, 6, 7, 8, and 9**.
+### 4.1 Root Cause
+`VBDIS3.67e` emitted only 121 procedures (`Module1` and forms 5–9). The 70 procedures of forms 1–4, in segments 5–9, were dropped by the bit-rotation bug described in Section 1.1.
 
-### 4.2 Location of Missing Strings
-By directly tracing the 14 relocation chains in Segment 3 to Segments 4–17, `vb3dec` identified and reconstructed all 18 occurrences of `'mimic'`, `'morph'`, and `'esper'`:
+### 4.2 Recovered Strings
+Following all 14 relocation chains from Segment 3 to segments 4–17, `vb3dec` recovers all 18 occurrences:
 
-| Keyword | Segment | Procedure | Module | Context Snippet |
-|---------|---------|-----------|--------|-----------------|
-| `mimic` | Seg 4 | `fn0113` | Module 1 | `fn0113 = "Mimic"` *(Only one found by VBDIS3)* |
-| `mimic` | **Seg 7** | **`sub060A`** | **Form 2 (DROPPED BY VBDIS3)** | `" Player Added As a Mimic "` |
-| `mimic` | **Seg 8** | **`sub065A`** | **Form 3 (DROPPED BY VBDIS3)** | `"Mimic"` |
-| `morph` | **Seg 7** | **`sub052F`** | **Form 2 (DROPPED BY VBDIS3)** | `"</morph>"` |
-| `morph` | **Seg 7** | **`sub060A`** | **Form 2 (DROPPED BY VBDIS3)** | `"/morph"`, `"/morph"`, `"/morph"` |
-| `morph` | Seg 14 | `sub0BB8` | Form 8 | `" morphs into Esper form."` |
-| `morph` | Seg 14 | `sub0C10` | Form 8 | `l0200$ = "morph"` |
-| `morph` | Seg 15 | `sub0CDF` | Form 8 | `" cannot morph again."`, `" begins to morph.."` |
-| `morph` | Seg 15 | `sub0CF3` | Form 8 | `"morph"` |
-| `esper` | Seg 14 | `sub0BB8` | Form 8 | `" morphs into Esper form."` |
-| `esper` | Seg 15 | `sub0CDF` | Form 8 | `" already in Esper form."` |
-
-All 70 previously missing procedures in Forms 1–4 are fully recovered and emitted by `vb3dec`.
+| Procedure | Module | Segment | Strings | In VBDIS3 output |
+|-----------|--------|---------|---------|------------------|
+| `fn0113` | `Module1` | 4 | `"Mimic"` | yes |
+| `control4_Click` | `frm2` | 7 | `"Confirm? </yes> </lock> </morph>"` | **no** |
+| `control58_Timer` | `frm2` | 7 | `" Player Added As a Mimic "`, `"/morph"` (3×) | **no** |
+| `control8_Click` | `frm3` | 8 | `"Mimic"` | **no** |
+| `sub0BB8` | `frm8` | 14 | `" morphs into Esper form."` | yes |
+| `sub0C10` | `frm8` | 14 | `"morph"` | yes |
+| `control15_Timer` | `frm8` | 15 | `"morph"` (4×) | yes |
+| `control16_Timer` | `frm8` | 15 | `" cannot morph again."`, `" begins to morph.."`, `" is already in Esper form."`, `"morph"` | yes |
 
 ---
 
-## 5. Architectural Implementation in `vb3dec`
+## 5. Implementation in `vb3dec`
 
-1. **Direct Relocation Resolution**:
-   Does not rely on fragile array indexing. Directly reads the 14 NE relocation entries following Segment 3, and follows each relocation chain at descriptor offset `+0x26` to bind every procedure to its true code segment.
-2. **Total Module & Procedure Completeness**:
-   Traverses all 11 modules and all 208 descriptors (191 local bytecode procedures + 17 external API declarations).
-3. **Resilient Bytecode Stream Parsing**:
-   Decodes 16-bit P-code tokens via native Go opcode definitions and token translation tables (`baseOpcodes` and `flagTokenData` in `pkg/pcode/opcodes_table.go`, `controlTokenData` in `pkg/pcode/control_table.go`), completely eliminating opaque external binary `.DAT` blobs. Tokens missing from the tables are emitted as inline diagnostic comments (`' <UNKNOWN_OPCODE: 0xXXXX>`); known tokens without a statement decoder are logged as warnings and emitted as their keyword. In both cases disassembly advances by operand size without terminating.
-4. **Clean Code Generation**:
-   Emits Visual Basic 3 code without the syntax errors listed in Section 3 (remaining gaps are listed in [Known Limitations](limitations.md)):
-   - Strips type annotations from inside parameter parentheses (`(p00A4 As String)` instead of `(p00A4 As String ' 47)`).
-   - Emits valid API declarations (`Declare Function ... Lib ... Alias ...`), with parameter lists reconstructed from their call sites.
-   - Generates relative project files (`FF.MAK`).
-   - Appends event handlers directly inside `.FRM` files so controls function interactively.
-   - Automatically copies required companion dependencies (`.dll`, `.vbx`) alongside the generated project.
+1. **Relocation resolution:** `vb3dec` reads the 14 NE relocation entries after Segment 3 and follows each chain through descriptor offset `+0x26`, binding every procedure to its code segment without a lookup table.
+2. **Completeness:** It finds all 10 modules and all 208 procedure descriptors of `FF.EXE` (191 bytecode procedures and 17 `Declare` statements).
+3. **Robust token parsing:** Tokens missing from the opcode tables are emitted as diagnostic comments (`' <UNKNOWN_OPCODE: 0xXXXX>`), and known tokens without a statement decoder are logged and emitted as their keyword; either way, decoding continues with the next token.
+4. **Code generation:** The output avoids the syntax errors of Section 3 and the project problems of Sections 1.6 and 1.7, and `Declare` statements get parameter lists inferred from their call sites. Remaining gaps are listed in [Known Limitations](limitations.md).
 
 ---
 
@@ -325,8 +285,8 @@ All 70 previously missing procedures in Forms 1–4 are fully recovered and emit
 - Binary `.DAT` files and `//go:embed` directives are completely eliminated.
 - The 512 opcode definitions, the 10,838-entry flag translation array, and the control token table were parsed and converted into typed, readable static Go structures:
   - `var baseOpcodes = [512]OpcodeInfo{ ... }` and `var flagTokenData = [10838]uint16{ ... }` in `pkg/pcode/opcodes_table.go`
-  - `var controlTokenData = [32514]byte{ ... }` in `pkg/pcode/control_table.go`
-- The form decoder's control property and event tables are likewise generated Go source (`pkg/vbx/vbrun_tables.go`), extracted from `VBRUN300.DLL` by `cmd/vbrunprops`.
+  - `var controlTokenData = [32514]byte{ ... }` in `pkg/pcode/control_table.go` (the 32,511-byte table and the 3 bytes that follow it in the file)
+- The control and global object models are likewise generated Go source (`pkg/vbx/vbrun_tables.go`), extracted from `VBRUN300.DLL` by `cmd/vbrunprops`.
 - Benefits:
   - **Zero opaque binary dependencies** in the source tree.
   - **Type safety and transparency**: Opcode keywords, parameter counts, and case categories are directly inspectable in Go code.

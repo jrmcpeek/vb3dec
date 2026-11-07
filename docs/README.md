@@ -1,33 +1,7 @@
-# `vb3dec` Technical Documentation
+# vb3dec Documentation
 
-This directory contains technical documentation, reverse engineering research, and architectural references for the `vb3dec` Visual Basic 3 decompiler.
+- [Known Limitations](limitations.md): what `vb3dec` does not decompile yet, what executables do not store, and where the output is approximate.
+- [Technical Audit of VBDIS3](audit_vbdis3.md): why DoDi's VBDIS 3.67e decompiled `FF.EXE` incompletely, and how `vb3dec` addresses each problem.
+- [Test Input](../test_input/README.md): the sample programs used by the tests.
 
----
-
-## Documentation Index
-
-### 1. [Technical Audit: Legacy VBDIS3 Architecture & Reconstruction](audit_vbdis3.md)
-A deep-dive technical paper analyzing the internal architecture and failure modes of Hans-Peter Diettrich's original 1996–1997 *Visual Basic Discompiler* (VBDIS 3.67e).
-- **Core topics covered**:
-  - The bit-rotation lookup bug in `MODULE10.BAS` that caused legacy tools to drop entire forms and code segments.
-  - Form control event binding flaws, off-by-N indexing, and duplicate procedure collisions.
-  - Physical 16-bit stack frame analysis (`modBytes`) vs. flawed Variant inference.
-  - Windows-1252 ANSI encoding vs. UTF-8 corruption on high-ASCII prompt banners.
-  - Reconstructing missing "dark matter" feature strings and procedures.
-  - Eliminating opaque binary `.DAT` tables in favor of typed, native Go opcode tables.
-
-### 2. [Known Limitations & Language Scope](limitations.md)
-A detailed breakdown of the boundaries of `vb3dec`'s current decompilation coverage.
-- **Core topics covered**:
-  - P-code statements without a decoder (`:`, `Call`, `On Error`, file I/O, `On ... GoTo`).
-  - User-Defined Types (`Type ... End Type` / UDTs).
-  - Control types without a type ID mapping (`Shape`, `Data`) and untested paths (menus, control types absent from the samples).
-  - Control arrays and `Index As Integer` event parameters.
-  - Information compiled executables do not keep (procedure and variable names, line labels, `Declare` parameter lists).
-  - Known approximations and scope boundaries (16-bit NE vs 32-bit PE).
-
----
-
-## Related Links
-- [Root Project README](../README.md)
-- [Test Fixtures (`test_input/`)](../test_input/README.md)
+See the [project README](../README.md) for an overview and usage.
