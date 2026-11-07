@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"vb3dec/pkg/vbx"
 	"vb3dec/pkg/win1252"
 )
 
@@ -116,708 +117,15 @@ var standardMethods = map[uint16]string{
 	24: "Delete",
 }
 
-var formProperties = map[uint16]string{
-	0xC000: "Caption",
-	0xC001: "Name",
-	0xC002: "hWnd",
-	0xC003: "BackColor",
-	0xC004: "ForeColor",
-	0xC005: "Left",
-	0xC006: "Top",
-	0xC007: "Width",
-	0xC008: "Height",
-	0xC009: "Enabled",
-	0xC00A: "WindowState",
-	0xC00B: "MousePointer",
-	0xC00C: "FontName",
-	0xC00D: "FontSize",
-	0xC00E: "FontBold",
-	0xC00F: "FontItalic",
-	0xC010: "FontStrikethru",
-	0xC011: "FontUnderline",
-	0xC012: "hDC",
-	0xC013: "CurrentX",
-	0xC014: "CurrentY",
-	0xC015: "ScaleLeft",
-	0xC016: "ScaleTop",
-	0xC017: "ScaleWidth",
-	0xC018: "ScaleHeight",
-	0xC019: "ScaleMode",
-	0xC01A: "FontTransparent",
-	0xC01B: "DrawStyle",
-	0xC01C: "DrawWidth",
-	0xC01D: "FillStyle",
-	0xC01E: "FillColor",
-	0xC01F: "DrawMode",
-	0xC020: "AutoRedraw",
-	0xC021: "Picture",
-	0xC022: "BorderStyle",
-	0xC023: "Icon",
-	0xC024: "LinkTopic",
-	0xC025: "LinkMode",
-	0xC026: "MaxButton",
-	0xC027: "MinButton",
-	0xC028: "ControlBox",
-	0xC029: "Image",
-	0xC02E: "Visible",
-	0xC02F: "Tag",
-	0xC030: "MDIChild",
-	0xC031: "KeyPreview",
-	0xC032: "ClipControls",
-	0xC033: "HelpContextID",
-	0xC034: "ActiveControl",
-	0xC035: "ClientLeft",
-	0xC036: "ClientTop",
-	0xC037: "ClientWidth",
-	0xC038: "ClientHeight",
-}
-
-var comboBoxProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "BackColor",
-	0xC003: "ForeColor",
-	0xC004: "Left",
-	0xC005: "Top",
-	0xC006: "Width",
-	0xC007: "Height",
-	0xC008: "Enabled",
-	0xC009: "Visible",
-	0xC00A: "MousePointer",
-	0xC00B: "Text",
-	0xC00C: "FontName",
-	0xC00D: "FontBold",
-	0xC00E: "FontItalic",
-	0xC00F: "FontStrikethru",
-	0xC010: "FontUnderline",
-	0xC011: "FontSize",
-	0xC012: "TabIndex",
-	0xC013: "ListCount",
-	0xC014: "ListIndex",
-	0xC015: "List",
-	0xC016: "Sorted",
-	0xC017: "SelStart",
-	0xC018: "SelLength",
-	0xC019: "SelText",
-	0xC01A: "Parent",
-	0xC01B: "DragMode",
-	0xC01C: "DragIcon",
-	0xC01D: "TabStop",
-	0xC01E: "Tag",
-	0xC01F: "Style",
-	0xC020: "hWnd",
-	0xC021: "ItemData",
-	0xC022: "NewIndex",
-	0xC023: "HelpContextID",
-}
-
-var listBoxProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "BackColor",
-	0xC003: "ForeColor",
-	0xC004: "Left",
-	0xC005: "Top",
-	0xC006: "Width",
-	0xC007: "Height",
-	0xC008: "Enabled",
-	0xC009: "Visible",
-	0xC00A: "MousePointer",
-	0xC00B: "FontName",
-	0xC00C: "FontSize",
-	0xC00D: "FontBold",
-	0xC00E: "FontItalic",
-	0xC00F: "FontStrikethru",
-	0xC010: "FontUnderline",
-	0xC011: "TabIndex",
-	0xC012: "ListCount",
-	0xC013: "ListIndex",
-	0xC014: "List",
-	0xC015: "Sorted",
-	0xC016: "Text",
-	0xC017: "Parent",
-	0xC018: "DragMode",
-	0xC019: "DragIcon",
-	0xC01A: "TabStop",
-	0xC01B: "Tag",
-	0xC01C: "Columns",
-	0xC01D: "MultiSelect",
-	0xC01E: "Selected",
-	0xC01F: "SelCount",
-	0xC020: "TopIndex",
-	0xC021: "ItemData",
-	0xC022: "NewIndex",
-	0xC023: "HelpContextID",
-	0xC024: "hWnd",
-}
-
-var dirListBoxProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "BackColor",
-	0xC003: "ForeColor",
-	0xC004: "Left",
-	0xC005: "Top",
-	0xC006: "Width",
-	0xC007: "Height",
-	0xC008: "Enabled",
-	0xC009: "Visible",
-	0xC00A: "MousePointer",
-	0xC00B: "TabIndex",
-	0xC00C: "Path",
-	0xC00D: "ListCount",
-	0xC00E: "ListIndex",
-	0xC00F: "List",
-	0xC010: "FontName",
-	0xC011: "FontSize",
-	0xC012: "FontBold",
-	0xC013: "FontItalic",
-	0xC014: "FontStrikethru",
-	0xC015: "FontUnderline",
-	0xC016: "Parent",
-	0xC017: "DragMode",
-	0xC018: "DragIcon",
-	0xC019: "TabStop",
-	0xC01A: "Tag",
-	0xC01B: "hWnd",
-	0xC01C: "HelpContextID",
-}
-
-var fileListBoxProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "BackColor",
-	0xC003: "ForeColor",
-	0xC004: "Left",
-	0xC005: "Top",
-	0xC006: "Width",
-	0xC007: "Height",
-	0xC008: "Enabled",
-	0xC009: "Visible",
-	0xC00A: "MousePointer",
-	0xC00B: "TabIndex",
-	0xC00C: "Path",
-	0xC00D: "Pattern",
-	0xC00E: "FileName",
-	0xC00F: "Normal",
-	0xC010: "ReadOnly",
-	0xC011: "Archive",
-	0xC012: "Hidden",
-	0xC013: "System",
-	0xC014: "ListCount",
-	0xC015: "ListIndex",
-	0xC016: "List",
-	0xC017: "FontName",
-	0xC018: "FontSize",
-	0xC019: "FontBold",
-	0xC01A: "FontItalic",
-	0xC01B: "FontStrikethru",
-	0xC01C: "FontUnderline",
-	0xC01D: "Parent",
-	0xC01E: "DragMode",
-	0xC01F: "DragIcon",
-	0xC020: "TabStop",
-	0xC021: "Tag",
-	0xC022: "hWnd",
-	0xC023: "HelpContextID",
-	0xC024: "MultiSelect",
-	0xC025: "Selected",
-	0xC026: "TopIndex",
-}
-
-var mmControlProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "BorderStyle",
-	0xC002: "DragIcon",
-	0xC003: "DragMode",
-	0xC004: "Enabled",
-	0xC005: "Height",
-	0xC006: "Index",
-	0xC007: "Left",
-	0xC008: "MousePointer",
-	0xC009: "Parent",
-	0xC00A: "TabIndex",
-	0xC00B: "TabStop",
-	0xC00C: "Tag",
-	0xC00D: "Top",
-	0xC00E: "Visible",
-	0xC00F: "Width",
-	0xC010: "AutoEnable",
-	0xC011: "UpdateInterval",
-	0xC012: "Orientation",
-	0xC013: "PlayVisible",
-	0xC014: "PlayEnabled",
-	0xC015: "PauseVisible",
-	0xC016: "PauseEnabled",
-	0xC017: "StopVisible",
-	0xC018: "StopEnabled",
-	0xC019: "BackVisible",
-	0xC01A: "BackEnabled",
-	0xC01B: "StepVisible",
-	0xC01C: "StepEnabled",
-	0xC01D: "EjectVisible",
-	0xC01E: "EjectEnabled",
-	0xC01F: "PrevVisible",
-	0xC020: "PrevEnabled",
-	0xC021: "NextVisible",
-	0xC022: "NextEnabled",
-	0xC023: "RecordVisible",
-	0xC024: "RecordEnabled",
-	0xC025: "Command",
-	0xC026: "DeviceID",
-	0xC027: "DeviceType",
-	0xC028: "FileName",
-	0xC029: "CanEject",
-	0xC02A: "CanPlay",
-	0xC02B: "CanRecord",
-	0xC02C: "CanStep",
-	0xC02D: "UsesWindows",
-	0xC02E: "Start",
-	0xC02F: "Length",
-	0xC030: "Tracks",
-	0xC031: "TimeFormat",
-	0xC032: "Mode",
-	0xC033: "Position",
-	0xC034: "Silent",
-	0xC035: "RecordMode",
-	0xC036: "Notify",
-	0xC037: "Wait",
-	0xC038: "Shareable",
-	0xC039: "From",
-	0xC03A: "To",
-	0xC03B: "Frames",
-	0xC03C: "Track",
-	0xC03D: "TrackLength",
-	0xC03E: "TrackPosition",
-	0xC03F: "Error",
-	0xC040: "ErrorMessage",
-	0xC041: "NotifyValue",
-	0xC042: "NotifyMessage",
-	0xC043: "hWndDisplay",
-	0xC044: "(About)",
-	0xC045: "HelpContextID",
-	0xC046: "hWnd",
-}
-
-var optionButtonProperties = map[uint16]string{
-	0xC000: "Caption",
-	0xC001: "Name",
-	0xC002: "Index",
-	0xC003: "BackColor",
-	0xC004: "ForeColor",
-	0xC005: "Left",
-	0xC006: "Top",
-	0xC007: "Width",
-	0xC008: "Height",
-	0xC009: "Enabled",
-	0xC00A: "Visible",
-	0xC00B: "MousePointer",
-	0xC00C: "FontName",
-	0xC00D: "FontSize",
-	0xC00E: "FontBold",
-	0xC00F: "FontItalic",
-	0xC010: "FontStrikethru",
-	0xC011: "FontUnderline",
-	0xC012: "TabIndex",
-	0xC013: "Value",
-	0xC014: "Parent",
-	0xC015: "DragMode",
-	0xC016: "DragIcon",
-	0xC017: "TabStop",
-	0xC018: "Tag",
-	0xC019: "Alignment",
-	0xC01A: "HelpContextID",
-	0xC01B: "hWnd",
-}
-
-var checkBoxProperties = map[uint16]string{
-	0xC000: "Caption",
-	0xC001: "Name",
-	0xC002: "Index",
-	0xC003: "BackColor",
-	0xC004: "ForeColor",
-	0xC005: "Left",
-	0xC006: "Top",
-	0xC007: "Width",
-	0xC008: "Height",
-	0xC009: "Enabled",
-	0xC00A: "Visible",
-	0xC00B: "MousePointer",
-	0xC00C: "FontName",
-	0xC00D: "FontBold",
-	0xC00E: "FontItalic",
-	0xC00F: "FontStrikethru",
-	0xC010: "FontUnderline",
-	0xC011: "FontSize",
-	0xC012: "TabIndex",
-	0xC013: "Value",
-	0xC014: "Parent",
-	0xC015: "DragMode",
-	0xC016: "DragIcon",
-	0xC017: "TabStop",
-	0xC018: "Tag",
-	0xC019: "Alignment",
-	0xC01A: "HelpContextID",
-	0xC01B: "hWnd",
-	0xC01C: "DataSource",
-	0xC01D: "DataField",
-	0xC01E: "DataChanged",
-}
-
-var commandButtonProperties = map[uint16]string{
-	0xC000: "Caption",
-	0xC001: "Name",
-	0xC002: "Index",
-	0xC003: "BackColor",
-	0xC004: "Left",
-	0xC005: "Top",
-	0xC006: "Width",
-	0xC007: "Height",
-	0xC008: "Enabled",
-	0xC009: "Visible",
-	0xC00A: "MousePointer",
-	0xC00B: "FontName",
-	0xC00C: "FontSize",
-	0xC00D: "FontBold",
-	0xC00E: "FontItalic",
-	0xC00F: "FontStrikethru",
-	0xC010: "FontUnderline",
-	0xC011: "TabIndex",
-	0xC012: "Value",
-	0xC013: "Default",
-	0xC014: "Cancel",
-	0xC015: "Parent",
-	0xC016: "DragMode",
-	0xC017: "DragIcon",
-	0xC018: "TabStop",
-	0xC019: "Tag",
-	0xC01A: "hWnd",
-	0xC01B: "HelpContextID",
-}
-
-var textBoxProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "BackColor",
-	0xC003: "ForeColor",
-	0xC004: "Left",
-	0xC005: "Top",
-	0xC006: "Width",
-	0xC007: "Height",
-	0xC008: "Enabled",
-	0xC009: "Visible",
-	0xC00A: "MousePointer",
-	0xC00B: "Text",
-	0xC00C: "FontName",
-	0xC00D: "FontSize",
-	0xC00E: "FontBold",
-	0xC00F: "FontItalic",
-	0xC010: "FontStrikethru",
-	0xC011: "FontUnderline",
-	0xC012: "TabIndex",
-	0xC013: "BorderStyle",
-	0xC014: "LinkTopic",
-	0xC015: "LinkItem",
-	0xC016: "LinkMode",
-	0xC017: "MultiLine",
-	0xC018: "ScrollBars",
-	0xC019: "SelStart",
-	0xC01A: "SelLength",
-	0xC01B: "SelText",
-	0xC01C: "Parent",
-	0xC01D: "DragMode",
-	0xC01E: "DragIcon",
-	0xC01F: "LinkTimeout",
-	0xC020: "TabStop",
-	0xC021: "Tag",
-	0xC022: "PasswordChar",
-	0xC023: "HideSelection",
-	0xC024: "Alignment",
-	0xC025: "MaxLength",
-	0xC026: "HelpContextID",
-	0xC027: "hWnd",
-	0xC029: "DataSource",
-	0xC02A: "DataField",
-	0xC02B: "DataChanged",
-}
-
-var labelProperties = map[uint16]string{
-	0xC000: "Caption",
-	0xC001: "Name",
-	0xC002: "Index",
-	0xC003: "BackColor",
-	0xC004: "ForeColor",
-	0xC005: "Left",
-	0xC006: "Top",
-	0xC007: "Width",
-	0xC008: "Height",
-	0xC009: "Enabled",
-	0xC00A: "Visible",
-	0xC00B: "MousePointer",
-	0xC00C: "FontName",
-	0xC00D: "FontSize",
-	0xC00E: "FontBold",
-	0xC00F: "FontItalic",
-	0xC010: "FontStrikethru",
-	0xC011: "FontUnderline",
-	0xC012: "TabIndex",
-	0xC013: "BorderStyle",
-	0xC014: "Alignment",
-	0xC015: "LinkTopic",
-	0xC016: "LinkItem",
-	0xC017: "LinkMode",
-	0xC018: "AutoSize",
-	0xC019: "Parent",
-	0xC01A: "DragMode",
-	0xC01B: "DragIcon",
-	0xC01C: "LinkTimeout",
-	0xC01D: "Tag",
-	0xC01E: "WordWrap",
-	0xC01F: "BackStyle",
-	0xC020: "DataSource",
-	0xC021: "DataField",
-	0xC022: "DataChanged",
-}
-
-var frameProperties = map[uint16]string{
-	0xC000: "Caption",
-	0xC001: "Name",
-	0xC002: "Index",
-	0xC003: "BackColor",
-	0xC004: "ForeColor",
-	0xC005: "Left",
-	0xC006: "Top",
-	0xC007: "Width",
-	0xC008: "Height",
-	0xC009: "Enabled",
-	0xC00A: "Visible",
-	0xC00B: "MousePointer",
-	0xC00C: "FontName",
-	0xC00D: "FontSize",
-	0xC00E: "FontBold",
-	0xC00F: "FontItalic",
-	0xC010: "FontStrikethru",
-	0xC011: "FontUnderline",
-	0xC012: "TabIndex",
-	0xC013: "Parent",
-	0xC014: "DragMode",
-	0xC015: "DragIcon",
-	0xC016: "Tag",
-	0xC017: "hWnd",
-	0xC018: "ClipControls",
-	0xC019: "HelpContextID",
-}
-
-var pictureBoxProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "BackColor",
-	0xC002: "Index",
-	0xC003: "Picture",
-	0xC004: "ForeColor",
-	0xC005: "Left",
-	0xC006: "Top",
-	0xC007: "Width",
-	0xC008: "Height",
-	0xC009: "Enabled",
-	0xC00A: "Visible",
-	0xC00B: "MousePointer",
-	0xC00C: "FontName",
-	0xC00D: "FontSize",
-	0xC00E: "FontBold",
-	0xC00F: "FontItalic",
-	0xC010: "FontStrikethru",
-	0xC011: "FontUnderline",
-	0xC012: "TabIndex",
-	0xC013: "hDC",
-	0xC014: "CurrentX",
-	0xC015: "CurrentY",
-	0xC016: "ScaleLeft",
-	0xC017: "ScaleTop",
-	0xC018: "ScaleWidth",
-	0xC019: "ScaleHeight",
-	0xC01A: "ScaleMode",
-	0xC01B: "FontTransparent",
-	0xC01C: "DrawStyle",
-	0xC01D: "DrawWidth",
-	0xC01E: "FillStyle",
-	0xC01F: "FillColor",
-	0xC020: "DrawMode",
-	0xC021: "AutoRedraw",
-	0xC023: "AutoSize",
-	0xC024: "BorderStyle",
-	0xC025: "LinkTopic",
-	0xC026: "LinkItem",
-	0xC027: "LinkMode",
-	0xC028: "Image",
-	0xC029: "Parent",
-	0xC02A: "DragMode",
-	0xC02B: "DragIcon",
-	0xC02C: "LinkTimeout",
-	0xC02D: "TabStop",
-	0xC02E: "Tag",
-	0xC02F: "hWnd",
-	0xC030: "ClipControls",
-	0xC031: "HelpContextID",
-	0xC032: "Align",
-	0xC034: "DataSource",
-	0xC035: "DataField",
-	0xC036: "DataChanged",
-}
-
-var hScrollBarProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "Left",
-	0xC003: "Top",
-	0xC004: "Width",
-	0xC005: "Height",
-	0xC006: "Enabled",
-	0xC007: "Visible",
-	0xC008: "MousePointer",
-	0xC009: "TabIndex",
-	0xC00A: "Min",
-	0xC00B: "Max",
-	0xC00C: "SmallChange",
-	0xC00D: "LargeChange",
-	0xC00E: "Value",
-	0xC00F: "Parent",
-	0xC010: "DragMode",
-	0xC011: "DragIcon",
-	0xC012: "TabStop",
-	0xC013: "Tag",
-	0xC014: "hWnd",
-	0xC015: "HelpContextID",
-}
-
-var vScrollBarProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "Left",
-	0xC003: "Top",
-	0xC004: "Width",
-	0xC005: "Height",
-	0xC006: "Enabled",
-	0xC007: "Visible",
-	0xC008: "MousePointer",
-	0xC009: "TabIndex",
-	0xC00A: "Min",
-	0xC00B: "Max",
-	0xC00C: "SmallChange",
-	0xC00D: "LargeChange",
-	0xC00E: "Value",
-	0xC00F: "Parent",
-	0xC010: "DragMode",
-	0xC011: "DragIcon",
-	0xC012: "TabStop",
-	0xC013: "Tag",
-	0xC014: "hWnd",
-	0xC015: "HelpContextID",
-}
-
-var timerProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "Enabled",
-	0xC003: "Interval",
-	0xC004: "Parent",
-	0xC005: "Tag",
-	0xC007: "Left",
-	0xC008: "Top",
-}
-
-var imageProperties = map[uint16]string{
-	0xC000: "Name",
-	0xC001: "Index",
-	0xC002: "Picture",
-	0xC003: "Left",
-	0xC004: "Top",
-	0xC005: "Width",
-	0xC006: "Height",
-	0xC007: "Enabled",
-	0xC008: "Visible",
-	0xC009: "MousePointer",
-	0xC00A: "Stretch",
-	0xC00B: "Parent",
-	0xC00C: "DragMode",
-	0xC00D: "DragIcon",
-	0xC00E: "Tag",
-	0xC00F: "BorderStyle",
-	0xC010: "DataSource",
-	0xC011: "DataField",
-	0xC012: "DataChanged",
-}
-
-// formatProperty resolves 16-bit property IDs into their Visual Basic property names,
-// taking into account the specific control type when available.
-func formatProperty(ctrlType string, propID uint16, isWrite bool, val string) string {
-	switch ctrlType {
-	case "Form", "MDIForm":
-		if name, ok := formProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "ComboBox":
-		if name, ok := comboBoxProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "ListBox":
-		if name, ok := listBoxProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "DirListBox":
-		if name, ok := dirListBoxProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "FileListBox":
-		if name, ok := fileListBoxProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "MMControl":
-		if name, ok := mmControlProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "OptionButton":
-		if name, ok := optionButtonProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "CheckBox":
-		if name, ok := checkBoxProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "CommandButton":
-		if name, ok := commandButtonProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "TextBox":
-		if name, ok := textBoxProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "Label":
-		if name, ok := labelProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "Frame":
-		if name, ok := frameProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "PictureBox":
-		if name, ok := pictureBoxProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "HScrollBar":
-		if name, ok := hScrollBarProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "VScrollBar":
-		if name, ok := vScrollBarProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "Timer":
-		if name, ok := timerProperties[propID]; ok && name != "" {
-			return name
-		}
-	case "Image":
-		if name, ok := imageProperties[propID]; ok && name != "" {
-			return name
+// formatProperty names the property a 16-bit property ID refers to. Property
+// IDs 0xC000+n select property n of the model of the object they apply to;
+// when that model is unknown, a generic mapping guesses the name.
+func formatProperty(model *vbx.Model, propID uint16, isWrite bool, val string) string {
+	if model != nil && propID&0xC000 == 0xC000 {
+		if n := int(propID &^ 0xC000); n < len(model.Props) {
+			if name := strings.TrimSpace(model.Props[n].Name); name != "" {
+				return name
+			}
 		}
 	}
 
@@ -1152,57 +460,88 @@ type procDisasmState struct {
 	warnings         []UnhandledOpcodeWarning // Warnings for unhandled opcodes
 }
 
-func (s *procDisasmState) getTargetControlType(target string) string {
-	// If target has a dot (e.g. "frm7.control1")
-	if idx := strings.Index(target, "."); idx >= 0 {
-		formPart := target[:idx]
-		ctrlPart := target[idx+1:]
-		if s.proj != nil {
-			for _, m := range s.proj.Modules {
-				if strings.EqualFold(m.Name, formPart) {
-					if m.ControlTypes != nil {
-						if ct, ok := m.ControlTypes[ctrlPart]; ok {
-							return ct
-						}
-					}
-				}
-			}
+// targetModel returns the model of the object a property reference applies to:
+// a global object, a form, or a control ("Text1", "frm2.Text1", or a control
+// array element "Text1(i)"). It returns nil if the object's type is unknown.
+func (s *procDisasmState) targetModel(target string) *vbx.Model {
+	if i := strings.Index(target, "("); i >= 0 {
+		target = target[:i]
+	}
+	if m, ok := vbx.ObjectModels[target]; ok {
+		return m
+	}
+	if m := s.paramModel(target); m != nil {
+		return m
+	}
+	if i := strings.Index(target, "."); i >= 0 {
+		if owner := s.moduleNamed(target[:i]); owner != nil {
+			return owner.ControlModels[target[i+1:]]
 		}
-		if s.mod != nil && (formPart == "Me" || strings.EqualFold(s.mod.Name, formPart)) {
-			if s.mod.ControlTypes != nil {
-				if ct, ok := s.mod.ControlTypes[ctrlPart]; ok {
-					return ct
-				}
+		return nil
+	}
+	if s.mod != nil {
+		if m := s.mod.ControlModels[target]; m != nil {
+			return m
+		}
+	}
+	if owner := s.moduleNamed(target); owner != nil && owner.IsForm {
+		return owner.ControlModels[owner.Name]
+	}
+	if s.proj != nil {
+		for _, m := range s.proj.Modules {
+			if cm := m.ControlModels[target]; cm != nil {
+				return cm
 			}
 		}
 	}
+	return nil
+}
 
-	if target == "Me" || (s.mod != nil && s.mod.IsForm && strings.EqualFold(target, s.mod.Name)) {
+// paramModel returns the model of the form or control that call sites pass
+// for the named parameter, or nil. Parameters are numbered in data slot
+// order, as in the procedure's declaration.
+func (s *procDisasmState) paramModel(name string) *vbx.Model {
+	if s.proc == nil || len(s.proc.ParamModels) == 0 || !strings.HasPrefix(name, "p") {
+		return nil
+	}
+	var offs []uint16
+	for off, v := range s.vars {
+		if strings.HasPrefix(v, "p") {
+			offs = append(offs, off)
+		}
+	}
+	sort.Slice(offs, func(i, j int) bool { return offs[i] < offs[j] })
+	for i, off := range offs {
+		if s.vars[off] == name {
+			return s.proc.ParamModels[i]
+		}
+	}
+	return nil
+}
+
+// objectTypeName returns the declared type of a parameter that receives a
+// form or control with the given model.
+func objectTypeName(m *vbx.Model) string {
+	if m == vbx.BuiltinModels["Form"] {
 		return "Form"
 	}
-	if s.proj != nil {
-		for _, m := range s.proj.Modules {
-			if m.IsForm && strings.EqualFold(target, m.Name) {
-				return "Form"
-			}
-		}
-	}
+	return "Control"
+}
 
-	if s.mod != nil && s.mod.ControlTypes != nil {
-		if ct, ok := s.mod.ControlTypes[target]; ok {
-			return ct
-		}
+// moduleNamed returns the module a name refers to ("Me" is the current
+// module), or nil.
+func (s *procDisasmState) moduleNamed(name string) *Module {
+	if name == "Me" {
+		return s.mod
 	}
 	if s.proj != nil {
 		for _, m := range s.proj.Modules {
-			if m.ControlTypes != nil {
-				if ct, ok := m.ControlTypes[target]; ok {
-					return ct
-				}
+			if strings.EqualFold(m.Name, name) {
+				return m
 			}
 		}
 	}
-	return ""
+	return nil
 }
 
 func (s *procDisasmState) resolveControlName(target string, ctrlIdx int) string {
@@ -1227,8 +566,7 @@ func (s *procDisasmState) resolveControlName(target string, ctrlIdx int) string 
 }
 
 func (s *procDisasmState) formatPropertyForTarget(target string, propID uint16, isWrite bool, val string) string {
-	ctrlType := s.getTargetControlType(target)
-	return formatProperty(ctrlType, propID, isWrite, val)
+	return formatProperty(s.targetModel(target), propID, isWrite, val)
 }
 
 func typeRank(t string) int {
@@ -2674,6 +2012,9 @@ func (s *procDisasmState) renderProcedure() string {
 		tName := s.varTypes[off]
 		if strings.HasPrefix(vName, "p") {
 			if !isEvent {
+				if m := s.proc.ParamModels[paramIdx]; m != nil && (tName == "" || tName == "Variant") {
+					tName = objectTypeName(m)
+				}
 				if tName == "" {
 					tName = "Variant"
 				}

@@ -182,3 +182,90 @@ func TestSampleJumpTargetsHaveLabels(t *testing.T) {
 		})
 	}
 }
+
+// TestSamplePropertyNames checks that property references in code are named
+// from the model of the object they apply to: built-in and custom controls,
+// control array elements, and global objects.
+func TestSamplePropertyNames(t *testing.T) {
+	samples := []struct {
+		dir, exe string
+		want     []string
+	}{
+		{fixture.FF, "FF.EXE", nil},
+		{fixture.Bascode, "BASCODE.EXE", []string{
+			"Screen.MousePointer = 11",
+			"Printer.NewPage",
+			`big.CMDialog1.Filter = "All Files. (*.*)|*.*|BAS Files. (*.bas)|*.bas|"`, // CMDIALOG.VBX
+			"big.Option3D2.Value = True", // THREED.VBX
+			"l0106 = p00F4.Height",       // parameter that receives a form
+		}},
+		{fixture.Empire, "EMPIRE.EXE", []string{
+			"gv01F2$ = App.Path",
+			`Printer.FontName = "Arial"`,
+			`((Screen.Width / Screen.TwipsPerPixelX) - 636) \ 2`,
+			"CountMap.CountryButton(l021A).Left = l021C - 90",
+		}},
+	}
+	for _, s := range samples {
+		t.Run(s.dir, func(t *testing.T) {
+			proj := parseSample(t, s.dir, s.exe)
+			d := pcode.NewDisassembler(proj)
+			var all strings.Builder
+			for _, m := range proj.Modules {
+				code, err := d.DisassembleModule(m)
+				if err != nil {
+					t.Fatalf("DisassembleModule(%s): %v", m.Name, err)
+				}
+				all.WriteString(code)
+			}
+			code := all.String()
+			for _, w := range s.want {
+				if !strings.Contains(code, w) {
+					t.Errorf("decompiled code lacks %q", w)
+				}
+			}
+			// Property IDs 0xC000+n index a model's property list; a
+			// placeholder means the referenced object's model was not found.
+			if ids := regexp.MustCompile(`\.Prop_C[0-9A-F]{3}\b`).FindAllString(code, -1); len(ids) > 0 {
+				t.Errorf("unresolved property names: %v", ids)
+			}
+		})
+	}
+}
+
+// TestSampleCallStatementArguments checks parameter declarations that are
+// inferred from the arguments of Call statements.
+func TestSampleCallStatementArguments(t *testing.T) {
+	samples := []struct {
+		dir, exe string
+		want     []string
+	}{
+		{fixture.Bascode, "BASCODE.EXE", []string{
+			"Sub sub00F4 (p00F4 As Form)",   // Call sub00F4(Form2) and others
+			"Sub sub01F0 (p0016 As String)", // Call sub01F0(l001E$)
+		}},
+		{fixture.Empire, "EMPIRE.EXE", []string{
+			`Declare Sub extsub0139 Lib "user" Alias "MoveWindow" (ByVal p1%, ByVal p2%, ByVal p3%, ByVal p4%, ByVal p5%, ByVal p6%)`,
+			`Declare Sub extsub0074 Lib "MMSystem" Alias "SndPlaySound" (ByVal p1$, ByVal p2%)`,
+		}},
+	}
+	for _, s := range samples {
+		t.Run(s.dir, func(t *testing.T) {
+			proj := parseSample(t, s.dir, s.exe)
+			d := pcode.NewDisassembler(proj)
+			var all strings.Builder
+			for _, m := range proj.Modules {
+				code, err := d.DisassembleModule(m)
+				if err != nil {
+					t.Fatalf("DisassembleModule(%s): %v", m.Name, err)
+				}
+				all.WriteString(code)
+			}
+			for _, w := range s.want {
+				if !strings.Contains(all.String(), w) {
+					t.Errorf("decompiled code lacks %q", w)
+				}
+			}
+		})
+	}
+}

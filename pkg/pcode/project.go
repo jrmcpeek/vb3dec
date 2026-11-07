@@ -44,8 +44,11 @@ type Procedure struct {
 	AliasName   string         // Dynamically resolved alias for external declarations (e.g. "FindChildByClass")
 	ParamByVal  map[int]bool   // 0-based parameter index -> true if ByVal
 	ParamTypes  map[int]string // 0-based parameter index -> inferred parameter type
-	IsEvent     bool           // Event procedure of a form or control
-	EventParams []EventParam   // Parameters of an event procedure
+	// ParamModels maps a 0-based parameter index to the model of the form or
+	// control that every call site passes for it.
+	ParamModels map[int]*vbx.Model
+	IsEvent     bool         // Event procedure of a form or control
+	EventParams []EventParam // Parameters of an event procedure
 	// ExternParams is the parameter list of an external declaration, inferred
 	// from its call sites (nil if it is never called).
 	ExternParams []string
@@ -67,18 +70,18 @@ func (p *Procedure) DeclaredName() string {
 
 // Module represents a code module or form code container in the VB3 project.
 type Module struct {
-	Index          int               // 1-based module index (1..N)
-	ID             uint16            // Module identifier (e.g. 0x0048, 0x0950)
-	Name           string            // e.g. "Module1", "frm1", "frm5"
-	IsForm         bool              // true if module is backed by a form
-	FormIndex      int               // 1-based form index if Form
-	Procedures     []*Procedure      // Procedures belonging to this module
-	ControlMap     map[uint16]string // Data segment offset -> control name or form name
-	ControlTypes   map[string]string // Control name -> type name (e.g. "control4" -> "ComboBox")
-	ControlByIndex map[int]string    // 1-based control index -> control name (e.g. 1 -> "control1")
-	FileName       string            // Form file name for form modules (e.g. "FRM1.FRM")
-	ModuleVars     []string          // Module-level variable declarations (e.g. "Dim m001E As Integer")
-	ModBytes       []byte            // Raw module data bytes from RT_RCDATA 2
+	Index          int                   // 1-based module index (1..N)
+	ID             uint16                // Module identifier (e.g. 0x0048, 0x0950)
+	Name           string                // e.g. "Module1", "frm1", "frm5"
+	IsForm         bool                  // true if module is backed by a form
+	FormIndex      int                   // 1-based form index if Form
+	Procedures     []*Procedure          // Procedures belonging to this module
+	ControlMap     map[uint16]string     // Data segment offset -> control name or form name
+	ControlModels  map[string]*vbx.Model // Form or control name -> model ("Me" is the form)
+	ControlByIndex map[int]string        // 1-based control index -> control name (e.g. 1 -> "control1")
+	FileName       string                // Form file name for form modules (e.g. "FRM1.FRM")
+	ModuleVars     []string              // Module-level variable declarations (e.g. "Dim m001E As Integer")
+	ModBytes       []byte                // Raw module data bytes from RT_RCDATA 2
 }
 
 // Project represents the discovered code structure of a VB3 executable.
@@ -393,14 +396,14 @@ func resolveControlTypes(proj *Project, forms []*frm.ExtractedForm) {
 		}
 		for _, m := range proj.Modules {
 			if m.IsForm && m.FormIndex == ef.Ref.Index {
-				if m.ControlTypes == nil {
-					m.ControlTypes = make(map[string]string)
+				if m.ControlModels == nil {
+					m.ControlModels = make(map[string]*vbx.Model)
 				}
 				if m.ControlByIndex == nil {
 					m.ControlByIndex = make(map[int]string)
 				}
-				m.ControlTypes["Me"] = "Form"
-				m.ControlTypes[m.Name] = "Form"
+				m.ControlModels["Me"] = ef.Form.Root.Model
+				m.ControlModels[m.Name] = ef.Form.Root.Model
 				for _, c := range ef.Form.Controls {
 					ctrlIdx := c.ID
 					if ctrlIdx <= 0 {
@@ -411,7 +414,7 @@ func resolveControlTypes(proj *Project, forms []*frm.ExtractedForm) {
 						ctrlName = fmt.Sprintf("control%d", ctrlIdx)
 					}
 					m.ControlByIndex[ctrlIdx] = ctrlName
-					m.ControlTypes[ctrlName] = c.TypeName
+					m.ControlModels[ctrlName] = c.Model
 				}
 			}
 		}
@@ -543,8 +546,10 @@ func pascalStringAt(data []byte, off int) string {
 // globalObjectTags maps the instance tags of VB3's global objects. Form
 // instance tags are listed in the project directory; these are not.
 var globalObjectTags = map[byte]string{
-	0x33: "Screen", // Identified from form-centering code (Screen.Height / 2 - Form.Height / 2)
+	0x32: "Printer", // Identified from printing code (Printer.NewPage, Printer.EndDoc)
+	0x33: "Screen",  // Identified from form-centering code (Screen.Height / 2 - Form.Height / 2)
 	0x34: "Clipboard",
+	0x3D: "App", // Identified from App.Path used as the directory of data files
 }
 
 func resolveGlobalsAndFixups(data2 []byte, proj *Project) {
@@ -1102,6 +1107,7 @@ func resolveByValParameters(proj *Project) error {
 		for _, proc := range mod.Procedures {
 			proc.ParamByVal = make(map[int]bool)
 			proc.ParamTypes = make(map[int]string)
+			proc.ParamModels = make(map[int]*vbx.Model)
 			procByName[proc.Name] = proc
 			procByName[proc.DeclaredName()] = proc
 		}
@@ -1113,12 +1119,29 @@ func resolveByValParameters(proj *Project) error {
 	}
 	procRecords := make(map[*Procedure]map[int]*paramCallRecord)
 
+	// paramModelVote collects the models of the objects passed for a
+	// parameter; mixed is set once a call site passes anything else.
+	type paramModelVote struct {
+		model *vbx.Model
+		mixed bool
+	}
+	modelVotes := make(map[*Procedure]map[int]*paramModelVote)
+
+	formModules := make(map[string]*Module)
+	for _, m := range proj.Modules {
+		if m.IsForm {
+			formModules[m.Name] = m
+		}
+	}
+
 	type stackItem struct {
 		isByVal  bool
 		typeName string
-		coerced  string // Type the value was coerced to (C<typ>), if known
-		byRef    bool   // Address of a variable (passed ByRef)
-		cString  bool   // String passed to an external procedure ByVal
+		coerced  string     // Type the value was coerced to (C<typ>), if known
+		byRef    bool       // Address of a variable (passed ByRef)
+		cString  bool       // String passed to an external procedure ByVal
+		model    *vbx.Model // Model of the form or control the value refers to
+		form     *Module    // Form module of a form reference
 	}
 	externCalls := make(map[*Procedure][]externCall)
 
@@ -1219,7 +1242,7 @@ func resolveByValParameters(proj *Project) error {
 				case kw == "exe":
 					// Other exe instructions - no stack change
 
-				case kw == "var()" || kw == "call":
+				case kw == "var()" || kw == "call" || kw == "Call ":
 					numArgs := 0
 					var slot uint16
 					if len(params) >= 2 {
@@ -1282,8 +1305,30 @@ func resolveByValParameters(proj *Project) error {
 								targetProc.ParamTypes[p] = argItems[p].typeName
 							}
 						}
+						if modelVotes[targetProc] == nil {
+							modelVotes[targetProc] = make(map[int]*paramModelVote)
+						}
+						for p, item := range argItems {
+							vote := modelVotes[targetProc][p]
+							if vote == nil {
+								vote = &paramModelVote{}
+								modelVotes[targetProc][p] = vote
+							}
+							switch {
+							case item.model == nil:
+								vote.mixed = true
+							case vote.model == nil:
+								vote.model = item.model
+							case vote.model != item.model:
+								vote.mixed = true
+							}
+						}
 					}
 
+					// A Call statement leaves no return value.
+					if kw == "Call " {
+						break
+					}
 					retTypeName := ""
 					if targetProc != nil {
 						fnType := (targetProc.SubOrFunc >> 8) & 7
@@ -1297,12 +1342,26 @@ func resolveByValParameters(proj *Project) error {
 					}
 
 				case kw == "var" || kw == "pop.var":
+					// Track references to forms and to their controls
+					// (pop.var with a control index applied to a form).
+					var model *vbx.Model
+					var form *Module
+					if len(params) > 0 {
+						if kw == "var" {
+							if fm := formModules[mod.ControlMap[params[0]]]; fm != nil {
+								model, form = fm.ControlModels[fm.Name], fm
+							}
+						} else if params[0]&0xC000 == 0x8000 && len(stack) > 0 && stack[len(stack)-1].form != nil {
+							fm := stack[len(stack)-1].form
+							model = fm.ControlModels[fm.ControlByIndex[int(params[0]&0x3FFF)]]
+						}
+					}
 					var tName string
 					_, iToken1, iToken2 := tbl.LookupControl(token)
 					if iToken2 == ctlKindAddress {
 						// Mode 14 reads a 4-byte value (Long or Single);
 						// otherwise the variable's address is pushed.
-						stack = append(stack, stackItem{byRef: iToken1 != ctlModeValue4})
+						stack = append(stack, stackItem{byRef: iToken1 != ctlModeValue4, model: model, form: form})
 						break
 					}
 					if iToken2 >= 1 && iToken2 <= 7 {
@@ -1313,7 +1372,7 @@ func resolveByValParameters(proj *Project) error {
 							tName = "String"
 						}
 					}
-					stack = append(stack, stackItem{typeName: tName})
+					stack = append(stack, stackItem{typeName: tName, model: model, form: form})
 
 				case kw == "c%":
 					stack = append(stack, stackItem{typeName: "Integer"})
@@ -1376,6 +1435,14 @@ func resolveByValParameters(proj *Project) error {
 		for paramIdx, rec := range records {
 			if rec.hasByVal && !rec.hasByRef {
 				proc.ParamByVal[paramIdx] = true
+			}
+		}
+	}
+
+	for proc, votes := range modelVotes {
+		for paramIdx, vote := range votes {
+			if vote.model != nil && !vote.mixed {
+				proc.ParamModels[paramIdx] = vote.model
 			}
 		}
 	}

@@ -43,7 +43,8 @@ This document outlines the current architectural scope and known limitations of 
 ### 1.5 Control Arrays (`Index As Integer`)
 - **Description:** Visual Basic allows multiple controls of the same type to share a common name, distinguished by an integer `Index` property (e.g., `Command1(0)`, `Command1(1)`). When an event fires on any control in the array, the VB runtime invokes an event handler with an added first parameter: `Sub Command1_Click (Index As Integer)`.
 - **Current Behavior:** Control array members are recognized from their form records, and their shared event handlers are emitted with the leading `Index As Integer` parameter. In executables that keep their name tables, the members share their original name. In protected binaries where names were stripped at compile time (such as VBGuard-protected binaries), `vb3dec` assigns unique sequential identifiers based on control IDs (`control1`, `control2`, ...), so the members of an array do not share a name.
-- **Contribution Path:** Members of a stripped control array can be identified because their event tables reference the same handlers; `pkg/frm` could give them a common name.
+- **Untested:** None of the sample programs has a control array with more than one member at design time. `FF.EXE`, the only protected sample, has no control arrays, and each control array in `EMPIRE.EXE` has a single member (index 0) that keeps its original name. The behavior of multi-member arrays described above follows from the decoder and has not been observed.
+- **Contribution Path:** With a protected sample that has multi-member control arrays, `pkg/frm` could give the members a common name: members of a control array share their event handlers, so their event tables reference the same procedures. Code references to the members would have to use the same name.
 
 ---
 
@@ -59,7 +60,7 @@ This document outlines the current architectural scope and known limitations of 
 
 ## 3. Known Approximations
 
-- **Property names in code:** Property references in P-code are decoded with a property table that was built for `FF.EXE`'s forms. Properties of other objects can get wrong names; for example, `Screen.MousePointer = 11` in `BASCODE.EXE` is emitted as `Screen.Enabled = 11`.
+- **Property names in code:** A property reference in P-code is an index into the property list of the referenced object's model, so it is named from the model of the form, control, or global object (`App`, `Clipboard`, `Printer`, `Screen`) it applies to. A parameter that every call site passes the same kind of form or control is declared `As Form` or `As Control` and named from that model. When the object is a variable or parameter whose type is still unknown, such as a parameter that receives different control types or a variable assigned with `Set`, the name comes from a generic mapping and can be wrong. None of the sample programs has such a reference. The `Debug` object has not been observed in a sample program.
 - **Form window bounds:** Forms store their client area. The outer `Left`, `Top`, `Width`, and `Height` written to `.FRM` files are derived from it with fixed border and caption sizes for the form's `BorderStyle`.
 - **Type conversions:** The target types of P-code type conversions are known for the conversion tokens that occur in the sample programs; others do not contribute to type inference.
 - **Project window settings:** The `ProjWinSize` and `ProjWinShow` lines of the generated `.MAK` file are fixed defaults; executables do not record them.

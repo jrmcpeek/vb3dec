@@ -123,6 +123,7 @@ type ControlNode struct {
 	ID         int            // 1-based control ID (0 for form)
 	Name       string         // e.g. "frm1", "control1"
 	TypeName   string         // e.g. "CommandButton", "Label", "MMControl"
+	Model      *vbx.Model     // Control model, or nil if unavailable
 	IsArray    bool           // Member of a control array
 	ArrayIndex int            // Control array index (when IsArray)
 	Properties []Property     // Ordered property assignments

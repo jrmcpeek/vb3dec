@@ -1040,3 +1040,66 @@ var BuiltinModels = map[string]*Model{
 		{Name: "Scroll", Params: 0, Std: -1},   // slot 8
 	}},
 }
+
+// ObjectModels lists the models of the VB3 global objects (App, Clipboard,
+// Printer, Screen), keyed by object name. Property order is property ID
+// order.
+var ObjectModels = map[string]*Model{
+	"App": {DefCtlName: "App", Props: []Prop{
+		{Name: "Name", Flags: 0x8600D43E, Std: 0},          // 0x00
+		{Name: "HelpFile", Flags: 0x00C14401, Std: -1},     // 0x01
+		{Name: "Path", Flags: 0x00005001, Std: -1},         // 0x02
+		{Name: "EXEName", Flags: 0x00005001, Std: -1},      // 0x03
+		{Name: "Title", Flags: 0x00004401, Std: -1},        // 0x04
+		{Name: "PrevInstance", Flags: 0x00005004, Std: -1}, // 0x05
+	}, Events: []Event{}},
+	"Clipboard": {DefCtlName: "Clipboard", Props: []Prop{
+		{Name: "Name", Flags: 0x8600D43E, Std: 0},  // 0x00
+		{Name: "Index", Flags: 0x84C1D43D, Std: 1}, // 0x01
+	}, Events: []Event{}},
+	"Printer": {DefCtlName: "Printer", Props: []Prop{
+		{Name: "Name", Flags: 0x8600D43E, Std: 0},             // 0x00
+		{Name: "Index", Flags: 0x84C1D43D, Std: 1},            // 0x01
+		{Name: "ForeColor", Flags: 0x80D12405, Std: 4},        // 0x02
+		{Name: "Width", Flags: 0x00005803, Std: -1},           // 0x03
+		{Name: "Height", Flags: 0x00005803, Std: -1},          // 0x04
+		{Name: "FontName", Flags: 0x90024401, Std: 13},        // 0x05
+		{Name: "FontSize", Flags: 0x90104407, Std: 18},        // 0x06
+		{Name: "FontBold", Flags: 0x90004404, Std: 14},        // 0x07
+		{Name: "FontItalic", Flags: 0x90004404, Std: 15},      // 0x08
+		{Name: "FontStrikethru", Flags: 0x90004404, Std: 16},  // 0x09
+		{Name: "FontUnderline", Flags: 0x90004404, Std: 17},   // 0x0A
+		{Name: "hDC", Flags: 0x00005802, Std: -1},             // 0x0B
+		{Name: "CurrentX", Flags: 0x00004C07, Std: -1},        // 0x0C
+		{Name: "CurrentY", Flags: 0x00004C07, Std: -1},        // 0x0D
+		{Name: "ScaleLeft", Flags: 0x10404407, Std: -1},       // 0x0E
+		{Name: "ScaleTop", Flags: 0x10404407, Std: -1},        // 0x0F
+		{Name: "ScaleWidth", Flags: 0x10004407, Std: -1},      // 0x10
+		{Name: "ScaleHeight", Flags: 0x10004407, Std: -1},     // 0x11
+		{Name: "ScaleMode", Flags: 0x00004406, Std: -1},       // 0x12
+		{Name: "FontTransparent", Flags: 0x10404404, Std: -1}, // 0x13
+		{Name: "DrawStyle", Flags: 0x00C14406, Std: -1},       // 0x14
+		{Name: "DrawWidth", Flags: 0x00C14402, Std: -1},       // 0x15
+		{Name: "FillStyle", Flags: 0x00C14406, Std: -1},       // 0x16
+		{Name: "FillColor", Flags: 0x00D12405, Std: -1},       // 0x17
+		{Name: "DrawMode", Flags: 0x00C14406, Std: -1},        // 0x18
+		{Name: "Page", Flags: 0x00005802, Std: -1},            // 0x19
+		{Name: "FontCount", Flags: 0x00005002, Std: -1},       // 0x1A
+		{Name: "Fonts", Flags: 0x00005101, Std: -1},           // 0x1B
+		{Name: "TwipsPerPixelX", Flags: 0x00005807, Std: -1},  // 0x1C
+		{Name: "TwipsPerPixelY", Flags: 0x00005807, Std: -1},  // 0x1D
+	}, Events: []Event{}},
+	"Screen": {DefCtlName: "Screen", Props: []Prop{
+		{Name: "Name", Flags: 0x8600D43E, Std: 0},            // 0x00
+		{Name: "Index", Flags: 0x84C1D43D, Std: 1},           // 0x01
+		{Name: "Width", Flags: 0x00005009, Std: -1},          // 0x02
+		{Name: "Height", Flags: 0x0000500B, Std: -1},         // 0x03
+		{Name: "FontCount", Flags: 0x00005002, Std: -1},      // 0x04
+		{Name: "Fonts", Flags: 0x00005101, Std: -1},          // 0x05
+		{Name: "ActiveForm", Flags: 0x0000503F, Std: -1},     // 0x06
+		{Name: "ActiveControl", Flags: 0x00005040, Std: -1},  // 0x07
+		{Name: "MousePointer", Flags: 0x80C12406, Std: 11},   // 0x08
+		{Name: "TwipsPerPixelX", Flags: 0x00005807, Std: -1}, // 0x09
+		{Name: "TwipsPerPixelY", Flags: 0x00005807, Std: -1}, // 0x0A
+	}, Events: []Event{}},
+}

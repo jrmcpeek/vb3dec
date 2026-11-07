@@ -41,6 +41,7 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 		ID:       0,
 		Name:     formRef.FormName,
 		TypeName: "Form",
+		Model:    vbx.BuiltinModels["Form"],
 	}
 
 	form := &Form{
@@ -87,7 +88,7 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 
 	var formValues []propValue
 	if p < formEndPos {
-		formModel := vbx.BuiltinModels["Form"]
+		formModel := formNode.Model
 		values, eventPos, err := walkProperties(formModel, stream[p:formEndPos], true, false)
 		if err != nil {
 			form.Warnings = append(form.Warnings, fmt.Sprintf("form %s: %v; remaining properties skipped", form.Name, err))
@@ -213,6 +214,7 @@ func DecodeFormStreamWithModels(stream []byte, formRef FormRef, nameMap map[int]
 			ID:         ctrlID,
 			Name:       ctrlName,
 			TypeName:   typeName,
+			Model:      model,
 			IsArray:    hasFlags,
 			ArrayIndex: arrayIndex,
 		}

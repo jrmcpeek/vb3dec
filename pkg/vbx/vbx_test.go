@@ -81,3 +81,24 @@ func TestBuiltinFormEventSlots(t *testing.T) {
 		t.Errorf("QueryUnload has %d parameters, want 2", e.Params)
 	}
 }
+
+func TestObjectModelPropertyIDs(t *testing.T) {
+	// Property IDs observed in compiled code of BASCODE.EXE and EMPIRE.EXE.
+	want := map[string]map[string]int{
+		"Screen":  {"Width": 0x02, "Height": 0x03, "MousePointer": 0x08, "TwipsPerPixelX": 0x09, "TwipsPerPixelY": 0x0A},
+		"Printer": {"FontName": 0x05, "FontSize": 0x06, "FontBold": 0x07, "CurrentX": 0x0C, "ScaleMode": 0x12},
+		"App":     {"Path": 0x02},
+	}
+	for obj, props := range want {
+		m := vbx.ObjectModels[obj]
+		if m == nil {
+			t.Errorf("missing %s model", obj)
+			continue
+		}
+		for name, id := range props {
+			if got := propIndex(m, name); got != id {
+				t.Errorf("%s.%s at 0x%02X, want 0x%02X", obj, name, got, id)
+			}
+		}
+	}
+}
