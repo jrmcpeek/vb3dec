@@ -1398,6 +1398,31 @@ func (s *procDisasmState) getVarName(offset uint16) string {
 	return name
 }
 
+// isLabelJump reports whether a keyword is a statement whose operand is a jump
+// to a line label.
+func isLabelJump(kw string) bool {
+	switch strings.TrimSpace(kw) {
+	case "GoTo", "GoSub":
+		return true
+	}
+	return false
+}
+
+// labelName names the line label at a jump operand. Jump operands are offsets
+// in the procedure's code segment; labels are named by their bytecode offset.
+func (s *procDisasmState) labelName(operand uint16) string {
+	return fmt.Sprintf("L%04X", int(operand)-int(s.proc.CodeOffset))
+}
+
+// addLabel records the line label at a jump operand if it lies within the
+// procedure's bytecode.
+func (s *procDisasmState) addLabel(operand uint16) {
+	target := int(operand) - int(s.proc.CodeOffset)
+	if target >= 0 && target < len(s.bc) {
+		s.labels[target] = s.labelName(operand)
+	}
+}
+
 // First pass: scan jump targets and variable references
 func (s *procDisasmState) scanPass() {
 	s.labels = make(map[int]string)
@@ -1426,26 +1451,12 @@ func (s *procDisasmState) scanPass() {
 			continue
 		}
 
-		if info.Case == 10 || info.Case == 11 || info.Case == 12 || info.Case == 14 {
-			if pc+2 <= len(bc) {
-				target := int(int16(binary.LittleEndian.Uint16(bc[pc : pc+2])))
-				if target > 0 && target < len(bc) {
-					s.labels[target] = fmt.Sprintf("L%04X", target)
-				}
-				pc += 2
-			}
-			continue
-		}
-
 		if info.Case == 13 {
 			if pc+2 <= len(bc) {
 				cnt := int(binary.LittleEndian.Uint16(bc[pc:pc+2])) / 2
 				pc += 2
 				for i := 0; i < cnt && pc+2 <= len(bc); i++ {
-					target := int(binary.LittleEndian.Uint16(bc[pc : pc+2]))
-					if target > 0 && target < len(bc) {
-						s.labels[target] = fmt.Sprintf("L%04X", target)
-					}
+					s.addLabel(binary.LittleEndian.Uint16(bc[pc : pc+2]))
 					pc += 2
 				}
 			}
@@ -1458,6 +1469,10 @@ func (s *procDisasmState) scanPass() {
 			pVal := binary.LittleEndian.Uint16(bc[pc : pc+2])
 			pc += 2
 			params = append(params, pVal)
+		}
+
+		if isLabelJump(info.Keyword) && len(params) > 0 {
+			s.addLabel(params[0])
 		}
 
 		if strings.HasPrefix(info.Keyword, "var") {
@@ -2338,21 +2353,7 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		s.push(kw)
 
 	case kw == "If ":
-		cleanCond := strings.TrimSpace(s.pop())
-
-		target := ""
-		if len(params) > 0 {
-			lbl, ok := s.labels[int(params[0])]
-			if ok {
-				target = lbl
-			}
-		}
-
-		if target != "" {
-			s.emitLine(fmt.Sprintf("If %s Then GoTo %s", cleanCond, target))
-		} else {
-			s.ifCond = cleanCond
-		}
+		s.ifCond = strings.TrimSpace(s.pop())
 
 	case kw == "For ":
 		if info.TokenID == 62 {
@@ -2398,14 +2399,14 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 	case kw == "GoTo " || kw == "GoTo":
 		target := ""
 		if len(params) > 0 {
-			target = fmt.Sprintf("L%04X", params[0])
+			target = s.labelName(params[0])
 		}
 		s.emitStatement(fmt.Sprintf("GoTo %s", target))
 
 	case kw == "GoSub " || kw == "GoSub":
 		target := ""
 		if len(params) > 0 {
-			target = fmt.Sprintf("L%04X", params[0])
+			target = s.labelName(params[0])
 		}
 		s.emitLine(fmt.Sprintf("GoSub %s", target))
 

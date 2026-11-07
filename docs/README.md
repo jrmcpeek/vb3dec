@@ -19,11 +19,11 @@ A deep-dive technical paper analyzing the internal architecture and failure mode
 ### 2. [Known Limitations & Language Scope](limitations.md)
 A detailed breakdown of the boundaries of `vb3dec`'s current decompilation coverage.
 - **Core topics covered**:
-  - P-code statements without a decoder (`:`, `Call`, `On Error`, file I/O) and line labels.
+  - P-code statements without a decoder (`:`, `Call`, `On Error`, file I/O, `On ... GoTo`).
   - User-Defined Types (`Type ... End Type` / UDTs).
   - Control types without a type ID mapping (`Shape`, `Data`) and untested paths (menus, control types absent from the samples).
   - Control arrays and `Index As Integer` event parameters.
-  - Information compiled executables do not keep (procedure and variable names, `Declare` parameter lists).
+  - Information compiled executables do not keep (procedure and variable names, line labels, `Declare` parameter lists).
   - Known approximations and scope boundaries (16-bit NE vs 32-bit PE).
 
 ---

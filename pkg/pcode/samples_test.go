@@ -138,3 +138,47 @@ func TestSampleEventNames(t *testing.T) {
 		}
 	}
 }
+
+var (
+	labelRef = regexp.MustCompile(`\b(?:GoTo|GoSub) (L[0-9A-F]{4})\b`)
+	labelDef = regexp.MustCompile(`(?m)^(L[0-9A-F]{4}):\r?$`)
+)
+
+// TestSampleJumpTargetsHaveLabels requires every GoTo and GoSub target to be
+// defined as a line label, starting in the first column, in the same procedure.
+func TestSampleJumpTargetsHaveLabels(t *testing.T) {
+	samples := []struct{ dir, exe string }{
+		{fixture.FF, "FF.EXE"},
+		{fixture.Bascode, "BASCODE.EXE"},
+		{fixture.Empire, "EMPIRE.EXE"},
+	}
+	for _, s := range samples {
+		t.Run(s.dir, func(t *testing.T) {
+			proj := parseSample(t, s.dir, s.exe)
+			d := pcode.NewDisassembler(proj)
+			refs := 0
+			for _, m := range proj.Modules {
+				for _, p := range m.Procedures {
+					if !p.IsLocal {
+						continue
+					}
+					code, err := d.DisassembleProcedure(p)
+					if err != nil {
+						t.Fatalf("DisassembleProcedure(%s.%s): %v", m.Name, p.Name, err)
+					}
+					defined := make(map[string]bool)
+					for _, def := range labelDef.FindAllStringSubmatch(code, -1) {
+						defined[def[1]] = true
+					}
+					for _, ref := range labelRef.FindAllStringSubmatch(code, -1) {
+						refs++
+						if !defined[ref[1]] {
+							t.Errorf("%s.%s jumps to undefined label %s", m.Name, p.Name, ref[1])
+						}
+					}
+				}
+			}
+			t.Logf("%d GoTo/GoSub references checked", refs)
+		})
+	}
+}

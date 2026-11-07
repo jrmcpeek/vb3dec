@@ -25,7 +25,7 @@ A modern 16-bit **Visual Basic 3.0** (New Executable) decompiler written in pure
   - Maps code modules to their forms, resources, and instance references using the project directory stored in the executable.
   - Names event procedures from each form's event tables, using the event lists of the VB3 runtime's control models and of custom `.VBX` controls (`Form_QueryUnload (Cancel As Integer, UnloadMode As Integer)`, `Text1_KeyDown (KeyCode As Integer, Shift As Integer)`, `MMControl1_Done (NotifyCode As Integer)`), including the `Index` parameter of control array handlers.
 - **High-Level Basic Reconstruction**:
-  - **Structured Control Flow**: Decompiles block `If/Then/Else/End If`, single-line `If`, `For/Next` loops with `Step`, `While/Wend`, `Do/Loop` variants, `Select Case`, and `Exit Sub/Function/For/Do`.
+  - **Structured Control Flow**: Decompiles block `If/Then/Else/End If`, single-line `If`, `For/Next` loops with `Step`, `While/Wend`, `Do/Loop` variants, `Select Case`, `Exit Sub/Function/For/Do`, and `GoTo` / `GoSub ... Return` with their line labels.
   - **Type Inference**: Infers variable types from the data types recorded in P-code variable references and from how values are used.
   - **Static Variable Retention**: Automatically detects static procedure data allocations (`bp == 0`) and emits `Static <var> As <type>` to preserve state across timer ticks.
   - **Global Variables**: Derives `Global` declarations, including fixed-bound and dynamic arrays, from the code's references to the global data area.
