@@ -172,7 +172,7 @@ func main() {
 					sb.WriteString("\n")
 				}
 				globalsPath := filepath.Join(outDir, "Globals.bas")
-				if err := os.WriteFile(globalsPath, []byte(sb.String()), 0644); err != nil {
+				if err := os.WriteFile(globalsPath, []byte(frm.ToCRLF(sb.String())), 0644); err != nil {
 					fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", globalsPath, err)
 					hadErrors = true
 				}
@@ -194,7 +194,7 @@ func main() {
 
 				fileName := mod.Name + ".bas"
 				outPath := filepath.Join(outDir, fileName)
-				if err := os.WriteFile(outPath, []byte(code), 0644); err != nil {
+				if err := os.WriteFile(outPath, []byte(frm.ToCRLF(code)), 0644); err != nil {
 					fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", outPath, err)
 					hadErrors = true
 					continue
@@ -209,7 +209,7 @@ func main() {
 							if err != nil {
 								fmt.Fprintf(os.Stderr, "Error decompiling form code %s: %v\n", mod.Name, err)
 								hadErrors = true
-							} else if err := os.WriteFile(frmPath, append(data, []byte(formCode)...), 0644); err != nil {
+							} else if err := os.WriteFile(frmPath, append(data, []byte(frm.ToCRLF(formCode))...), 0644); err != nil {
 								fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", frmPath, err)
 								hadErrors = true
 							}

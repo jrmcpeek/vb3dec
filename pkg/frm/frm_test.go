@@ -403,3 +403,11 @@ func TestHasCode(t *testing.T) {
 		}
 	}
 }
+
+func TestToCRLF(t *testing.T) {
+	got := frm.ToCRLF("\nOption Explicit\n\nSub Form_Load ()\r\nEnd Sub")
+	want := "\r\nOption Explicit\r\n\r\nSub Form_Load ()\r\nEnd Sub"
+	if got != want {
+		t.Errorf("ToCRLF = %q, want %q", got, want)
+	}
+}

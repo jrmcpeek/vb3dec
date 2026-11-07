@@ -49,6 +49,12 @@ func formatNode(sb *strings.Builder, node *ControlNode, depth int) {
 	sb.WriteString(fmt.Sprintf("%sEnd\r\n", indent))
 }
 
+// ToCRLF converts text to the CRLF line endings of VB3 text files (.FRM,
+// .BAS, .MAK), leaving existing CRLF line endings unchanged.
+func ToCRLF(text string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
+}
+
 // HasCode reports whether a text .FRM file has code after its form block,
 // which closes with the first unindented "End" line. Property values cannot
 // span lines, so text inside the form block never ends it.
