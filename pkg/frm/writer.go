@@ -48,3 +48,22 @@ func formatNode(sb *strings.Builder, node *ControlNode, depth int) {
 	// Block close: "End\r\n" or "   End\r\n"
 	sb.WriteString(fmt.Sprintf("%sEnd\r\n", indent))
 }
+
+// HasCode reports whether a text .FRM file has code after its form block,
+// which closes with the first unindented "End" line. Property values cannot
+// span lines, so text inside the form block never ends it.
+func HasCode(frmText string) bool {
+	lines := strings.Split(frmText, "\n")
+	for i, line := range lines {
+		if strings.TrimRight(line, "\r") != "End" {
+			continue
+		}
+		for _, rest := range lines[i+1:] {
+			if strings.TrimSpace(rest) != "" {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}

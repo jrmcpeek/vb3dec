@@ -204,7 +204,7 @@ func main() {
 				if mod.IsForm && mod.FileName != "" {
 					frmPath := filepath.Join(outDir, mod.FileName)
 					if data, err := os.ReadFile(frmPath); err == nil {
-						if !strings.Contains(string(data), "Sub ") && !strings.Contains(string(data), "Function ") {
+						if !frm.HasCode(string(data)) {
 							formCode, err := d.DisassembleFormCode(mod)
 							if err != nil {
 								fmt.Fprintf(os.Stderr, "Error decompiling form code %s: %v\n", mod.Name, err)

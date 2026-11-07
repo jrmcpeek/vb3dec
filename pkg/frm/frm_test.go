@@ -378,3 +378,28 @@ func TestDecodeEventTable(t *testing.T) {
 		t.Errorf("unexpected bindings: %+v", events)
 	}
 }
+
+func TestHasCode(t *testing.T) {
+	form := "VERSION 2.00\r\n" +
+		"Begin Form frm1 \r\n" +
+		"   Caption         =   \"Sub Function Demo\"\r\n" +
+		"   Begin Label control1 \r\n" +
+		"      Caption         =   \"End\"\r\n" +
+		"   End\r\n" +
+		"End\r\n"
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"form only, captions mention Sub and Function", form, false},
+		{"blank lines after form", form + "\r\n\n", false},
+		{"code after form", form + "\nOption Explicit\n\nSub Form_Load ()\nEnd Sub\n", true},
+		{"no form block", "Sub Form_Load ()\nEnd Sub\n", false},
+	}
+	for _, c := range cases {
+		if got := frm.HasCode(c.text); got != c.want {
+			t.Errorf("%s: HasCode = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
