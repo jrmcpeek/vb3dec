@@ -220,9 +220,9 @@ A prominent example of this defect occurs in `Module1.bas`:
    - True Decoded Text: `"«‹«——<"` (left-pointing prompt banner).
 
 3. **Semantic Purpose in Code:**
-   In `frm8.bas` (`sub0BA5`), the battle notification engine concatenates these two functions around a player's combat readiness message:
+   In `frm8.bas` (`sub0AA6`), the battle notification engine concatenates these two functions around a player's combat readiness message:
    ```vb
-   fn018F() & " " & charName & " is ready [" & hp & "/" & maxhp & "] " & fn00BE()
+   l006C = fn008B(fn018F() + " " + gv005E(p0046) + " is ready [" + Str$(gv0044(p0046, 1)) + "/" + Str$(gv0044(p0046, 2)) + "] " + fn00BE())
    ```
    In 1990s America Online (AOL 2.5/3.0) chat rooms, this generated the stylized announcement banner:
    ```text
@@ -231,7 +231,7 @@ A prominent example of this defect occurs in `Module1.bas`:
 
 **Resolution in `vb3dec`:**
 The `vb3dec` engine introduces a dedicated zero-dependency ANSI Windows-1252 transcoding package (`pkg/win1252`):
-- All string literals in P-code (Opcode Case 8) and form property streams (captions, control texts, tooltips, font names) are decoded through `win1252.Decode` and `win1252.FormatVBString`.
+- All string literals in P-code (Opcode Case 8) and form property streams (captions, control texts, font names) are decoded through `win1252.Decode` and `win1252.FormatVBString`.
 - High-ASCII characters (`0x80..0xFF`) are transcoded to their Unicode equivalents, so the decompiler works on valid text, and `win1252.Encode` converts them back when the files are written.
 - Emitted `.bas`, `.FRM`, and `.MAK` files are Windows-1252, which the VB3 IDE reads, so `fn00BE` is written as the original bytes `3E 97 97 BB 9B BB`. Modern editors must open them as Windows-1252 to show these characters, or the files can be written in UTF-8 for viewing with `-encoding utf-8`.
 
@@ -267,7 +267,7 @@ Following all 14 relocation chains from Segment 3 to segments 4–17, `vb3dec` r
 
 1. **Relocation resolution:** `vb3dec` reads the 14 NE relocation entries after Segment 3 and follows each chain through descriptor offset `+0x26`, binding every procedure to its code segment without a lookup table.
 2. **Completeness:** It finds all 10 modules and all 208 procedure descriptors of `FF.EXE` (191 bytecode procedures and 17 `Declare` statements).
-3. **Robust token parsing:** Tokens missing from the opcode tables are emitted as diagnostic comments (`' <UNKNOWN_OPCODE: 0xXXXX>`), and known tokens without a statement decoder are logged and emitted as their keyword; either way, decoding continues with the next token.
+3. **Robust token parsing:** Tokens missing from the opcode tables are emitted as diagnostic comments (`' <UNKNOWN_OPCODE: 0xXXXX>`), and known tokens without a decoder are marked with a comment (see [Known Limitations](limitations.md)); either way, decoding continues with the next token.
 4. **Code generation:** The output avoids the syntax errors of Section 3 and the project problems of Sections 1.6 and 1.7, and `Declare` statements get parameter lists inferred from their call sites. Remaining gaps are listed in [Known Limitations](limitations.md).
 
 ---

@@ -18,7 +18,8 @@ A decompiler for 16-bit **Visual Basic 3.0** executables, written in pure Go.
 - **P-code decompiler (`pkg/pcode`)**:
   - Uses opcode tables converted to Go from the data files of DoDi's VBDIS3, with no binary data files.
   - Maps code modules to their forms through the project directory stored in the executable, and names event procedures from each form's event tables (`Form_QueryUnload (Cancel As Integer, UnloadMode As Integer)`, `Text1_KeyDown (KeyCode As Integer, Shift As Integer)`), including the `Index` parameter of control array events.
-  - Rebuilds control flow: block and single-line `If`, `For/Next` with `Step`, `While/Wend`, `Do/Loop`, `Select Case`, `Exit`, and `GoTo` / `GoSub ... Return` with line labels.
+  - Rebuilds control flow: block and single-line `If`, `For/Next` with `Step`, `While/Wend`, `Do/Loop`, `Select Case`, `Exit`, `GoTo` / `GoSub ... Return` with line labels, and `On Error` / `Resume`.
+  - Decodes all the statements of the three sample programs, including file I/O, the `Print` method, and graphics methods, and keeps statements separated by `:` on one line. A token it cannot decode is marked with a comment in the output and counted in the console output.
   - Infers variable types from P-code variable references and from how values are used, and declares `Static` variables, `Global` variables, and array bounds from the executable's data descriptors.
   - Analyzes call sites across the project to infer parameter types (including `As Form`), `ByVal`, and the parameter lists of `Declare` statements, which executables do not keep.
 - **Project output**:
