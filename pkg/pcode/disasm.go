@@ -456,6 +456,8 @@ type procDisasmState struct {
 	lastSingleLineIf bool                     // Tracks if the last emitted line was a single-line If
 	singleLineElse   bool                     // In-flight single-line Else clause
 	joinLine         bool                     // The next line continues the last one after a ":" separator
+	inputFile        string                   // File number of an in-flight "Input #" or "Line Input #"
+	inputVars        []string                 // Variables of an in-flight "Input #"
 	caseIndentStack  []bool                   // Tracks indentation inside Case blocks for nested Select Case
 	arrayVars        map[uint16]bool          // offset -> true if variable is an array (e.g. ReDim'd)
 	pendingAsType    string                   // In-flight "As <Type>" clause for ReDim
@@ -1188,6 +1190,7 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		s.lastSingleLineIf = false
 		s.pendingLet = false
 		s.joinLine = false
+		s.inputFile, s.inputVars = "", nil
 		if !s.flushStatement() && s.ifCond != "" {
 			s.emitLine(fmt.Sprintf("If %s Then", s.ifCond))
 			s.indent++
@@ -1971,6 +1974,57 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 	case kw == "Beep":
 		s.emitStatement("Beep")
 
+	case kw == "#":
+		s.push("#" + s.pop())
+
+	case kw == "Open " && len(params) == 1 && fileModes[params[0]] != "":
+		recLen := ""
+		if info.TokenID == 143 { // With a "Len =" clause
+			recLen = s.pop()
+		}
+		fileNum := s.pop()
+		stmt := fmt.Sprintf("Open %s For %s As %s", s.pop(), fileModes[params[0]], fileNum)
+		if recLen != "" {
+			stmt += " Len = " + recLen
+		}
+		s.emitStatement(stmt)
+
+	case kw == "Close" && len(params) == 1:
+		fileNums := make([]string, params[0])
+		for i := len(fileNums) - 1; i >= 0; i-- {
+			fileNums[i] = s.pop()
+		}
+		s.emitStatement(strings.TrimSpace("Close " + strings.Join(fileNums, ", ")))
+
+	case (kw == "Get" || kw == "Put") && info.BitForward2 == 3:
+		// Get #file, record, variable
+		variable := s.pop()
+		record := s.pop()
+		s.emitStatement(fmt.Sprintf("%s %s, %s, %s", kw, s.pop(), record, variable))
+
+	case info.TokenID == 128:
+		// Get #file, , variable
+		variable := s.pop()
+		s.emitStatement(fmt.Sprintf("Get %s, , %s", s.pop(), variable))
+
+	case info.TokenID == 103:
+		// Starts "Input #file, ..." or "Line Input #file, ...".
+		s.inputFile = s.pop()
+		s.inputVars = nil
+
+	case info.TokenID == 130:
+		// A variable of "Input #file, ...".
+		s.inputVars = append(s.inputVars, s.pop())
+
+	case info.TokenID == 104:
+		// Ends "Input #file, ...".
+		s.emitStatement(fmt.Sprintf("Input %s, %s", s.inputFile, strings.Join(s.inputVars, ", ")))
+		s.inputFile, s.inputVars = "", nil
+
+	case kw == "Line Input ":
+		s.emitStatement(fmt.Sprintf("Line Input %s, %s", s.inputFile, s.pop()))
+		s.inputFile = ""
+
 	case kw == "Let ":
 		// "Let" comes before the tokens of the assignment it introduces.
 		s.pendingLet = true
@@ -2096,6 +2150,15 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		log.Printf("[WARN] %s.%s @ 0x%04X: unhandled opcode token=%d (0x%04X) alt=0x%04X kw=%q case=%d params=%v",
 			modName, s.proc.Name, pc, info.TokenID, info.TokenID, altToken, kw, info.Case, params)
 	}
+}
+
+// fileModes names the file modes of Open statements by their operand.
+var fileModes = map[uint16]string{
+	1:  "Input",
+	2:  "Output",
+	4:  "Random",
+	8:  "Append",
+	32: "Binary",
 }
 
 // onErrorResumeNext is the operand of "On Error Resume Next"; other

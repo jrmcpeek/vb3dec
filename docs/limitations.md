@@ -13,9 +13,9 @@ Tokens without a handler are emitted as their bare keyword, and their operands c
 ' vb3dec: unhandled P-code: "#" (token 105 @ 0x002E), "Open " (token 142 @ 0x0030)
 ```
 
-The console output ends the module table with the number of unhandled tokens and the most frequent ones, and each token is also logged to standard error as `[WARN] ... unhandled opcode`. `FF.EXE` has none; `BASCODE.EXE` has 206 and `EMPIRE.EXE` 860, and `TestSampleUnhandledOpcodeBudget` keeps these numbers from growing. These statements are affected:
+The console output ends the module table with the number of unhandled tokens and the most frequent ones, and each token is also logged to standard error as `[WARN] ... unhandled opcode`. `FF.EXE` has none; `BASCODE.EXE` has 88 and `EMPIRE.EXE` 631, and `TestSampleUnhandledOpcodeBudget` keeps these numbers from growing. These statements are affected:
 - `On Error GoTo 0`, whose encoding is unknown because no sample program uses it.
-- File I/O: `Open`, `Close`, `Input #`, `Line Input #`, `Print #`, `Get`, `Put`, and `#` file numbers.
+- File I/O: `Print #`, whose file number is followed by token 91 (`, `). No sample program uses `Write #`, `Seek`, `Lock`, `Unlock`, `Put` without a record number, or `Open` with an `Access` or `Lock` clause, so these are not decoded either.
 - The `Print` method of forms, picture boxes and `Printer`, and its `;` and `,` separators (the `v0`, `eol`, and `eop` tokens).
 - Graphics methods with coordinates: `Line`, `Circle`, `PSet`, and `Scale (x1, y1)-(x2, y2)`.
 - `On <expression> GoTo` and `On <expression> GoSub`. The statement is skipped and its selector expression is left behind, where it can corrupt the next statement; its targets still get line labels. No sample program uses these statements.

@@ -315,8 +315,8 @@ var unhandledBudget = []struct {
 	max      int
 }{
 	{fixture.FF, "FF.EXE", 0},
-	{fixture.Bascode, "BASCODE.EXE", 206},
-	{fixture.Empire, "EMPIRE.EXE", 860},
+	{fixture.Bascode, "BASCODE.EXE", 88},
+	{fixture.Empire, "EMPIRE.EXE", 631},
 }
 
 // TestSampleUnhandledOpcodeBudget keeps the number of unhandled tokens of
@@ -375,6 +375,9 @@ func TestSampleDecodedTokens(t *testing.T) {
 			"Resume L0122",
 			"Call sub0251",
 			"ChDir gv0162$: ChDrive Left$(gv0162$, 2)",
+			`Open p002C$ + ".LIB" For Output As #1`,
+			"Line Input #1, l0044$",
+			"Close #1",
 			`If LOF(1) >= (31.5 * 1024) Then l008E = fn014A("Unable To Complete Storage Operation.", 9005, "Your Code Section Exceeds 32Kbytes"): p0088 = -10: GoTo L0104`,
 			"Call sub01BC(l0024$, l0026$)",
 			"Call sub0272(gv0166$, gv0172(), l0040)",
@@ -394,6 +397,13 @@ func TestSampleDecodedTokens(t *testing.T) {
 			`If gv0552 = 0 Then gv0552 = 1: Button_Blitz.Caption = "On" Else gv0552 = 0: Button_Blitz.Caption = "Off"`,
 			"For l00F2 = 1 To p00E6: p00DE(l00F2) = l00E8(l00F2): Next l00F2",
 			`Case "4": OptionMoneyOrder.Value = -1`, // Separator after Case
+			`Open gv01F2$ + "\" + "tountdat.vbl" For Random As l010E Len = Len(m006A(0))`,
+			`Open gv01F2$ + "\c1.wav" For Binary As l010E`,
+			"Input #l0070, l0074$",
+			"Get l00C6, l00C8 + l00CC, l00CE",
+			"Get l010E, , gv01E6$", // No record number
+			"Put l009C, l00A0, l0096(l00A0)",
+			"Loop: Close l0260",
 		}},
 	}
 	for _, s := range samples {
@@ -426,7 +436,8 @@ func TestSampleDecodedTokens(t *testing.T) {
 				switch w.Keyword {
 				case "Not ", "Cls", "TextWidth", "Point", "FreeFile", "Err", "Date$", "CurDir$",
 					"ChDir", "ChDrive", "Erase", "Error", "FileCopy", "Kill ", "Let ", "Reset",
-					"On Error ", "Resume", "Resume Next", "Call ", ": ", ":":
+					"On Error ", "Resume", "Resume Next", "Call ", ": ", ":",
+					"#", "Open ", "Close", "Get", "Put", "Input ", "Line Input ":
 					t.Errorf("%s.%s @ 0x%04X: %q is unhandled", w.ModuleName, w.ProcName, w.PC, w.Keyword)
 				}
 			}
