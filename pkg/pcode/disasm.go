@@ -458,6 +458,7 @@ type procDisasmState struct {
 	caseIndentStack  []bool                   // Tracks indentation inside Case blocks for nested Select Case
 	arrayVars        map[uint16]bool          // offset -> true if variable is an array (e.g. ReDim'd)
 	pendingAsType    string                   // In-flight "As <Type>" clause for ReDim
+	pendingLet       bool                     // In-flight "Let" keyword for the next assignment
 	warnings         []UnhandledOpcodeWarning // Warnings for unhandled opcodes
 	// unhandledNotes holds, by index into lines, the unhandled tokens to
 	// report in a comment before that line (index len(lines): at the end).
@@ -670,6 +671,10 @@ func (s *procDisasmState) emitLine(line string) {
 func (s *procDisasmState) emitStatement(stmt string) {
 	if stmt == "" {
 		return
+	}
+	if s.pendingLet {
+		stmt = "Let " + stmt
+		s.pendingLet = false
 	}
 	if s.ifCond != "" {
 		s.emitLine(fmt.Sprintf("If %s Then %s", s.ifCond, stmt))
@@ -1138,6 +1143,7 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 	switch {
 	case info.Case == 5 || kw == "nl":
 		s.lastSingleLineIf = false
+		s.pendingLet = false
 		if len(s.stack) > 0 {
 			stmt := s.pop()
 			if stmt != "" && !strings.HasPrefix(stmt, "'") && stmt != "End" && stmt != "End " {
@@ -1364,6 +1370,11 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 				s.pendingAsType = dt
 			}
 		}
+
+	case strings.HasPrefix(kw, "var()") && len(params) >= 2 && params[0]&wholeArray != 0:
+		// The array itself rather than one of its elements, as in
+		// "Erase a" or "UBound(a, 1)".
+		s.push(strings.TrimRight(s.getVarName(params[1]), "$"))
 
 	case strings.HasPrefix(kw, "var()"):
 		numBounds := 1
@@ -1911,6 +1922,21 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 	case kw == "Beep":
 		s.emitStatement("Beep")
 
+	case kw == "Let ":
+		// "Let" comes before the tokens of the assignment it introduces.
+		s.pendingLet = true
+
+	case info.Flags == 3 && simpleStatements[kw]:
+		args := make([]string, info.BitForward2)
+		for i := len(args) - 1; i >= 0; i-- {
+			args[i] = s.pop()
+		}
+		stmt := strings.TrimSpace(kw)
+		if len(args) > 0 {
+			stmt += " " + strings.Join(args, ", ")
+		}
+		s.emitStatement(stmt)
+
 	case kw == "Timer":
 		s.push("Timer")
 
@@ -2021,6 +2047,25 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		log.Printf("[WARN] %s.%s @ 0x%04X: unhandled opcode token=%d (0x%04X) alt=0x%04X kw=%q case=%d params=%v",
 			modName, s.proc.Name, pc, info.TokenID, info.TokenID, altToken, kw, info.Case, params)
 	}
+}
+
+// wholeArray is set in the dimension count of an array reference that names
+// the whole array instead of an element.
+const wholeArray = 0x8000
+
+// simpleStatements are the statements whose arguments are a fixed number
+// of expressions, listed after the keyword and separated by commas.
+var simpleStatements = map[string]bool{
+	"ChDir":    true,
+	"ChDrive":  true,
+	"Erase":    true,
+	"Error":    true,
+	"FileCopy": true,
+	"Kill ":    true,
+	"MkDir":    true,
+	"Reset":    true,
+	"RmDir":    true,
+	"SetAttr":  true,
 }
 
 // UnhandledMarker starts the comment that marks code the decompiler could

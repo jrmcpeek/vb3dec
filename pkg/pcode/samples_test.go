@@ -315,8 +315,8 @@ var unhandledBudget = []struct {
 	max      int
 }{
 	{fixture.FF, "FF.EXE", 0},
-	{fixture.Bascode, "BASCODE.EXE", 417},
-	{fixture.Empire, "EMPIRE.EXE", 1344},
+	{fixture.Bascode, "BASCODE.EXE", 395},
+	{fixture.Empire, "EMPIRE.EXE", 1340},
 }
 
 // TestSampleUnhandledOpcodeBudget keeps the number of unhandled tokens of
@@ -352,9 +352,9 @@ func TestSampleUnhandledOpcodeBudget(t *testing.T) {
 	}
 }
 
-// TestSampleExpressionTokens checks expression tokens whose omission left
-// their operands behind, which corrupted the surrounding statements.
-func TestSampleExpressionTokens(t *testing.T) {
+// TestSampleDecodedTokens checks tokens whose omission left their operands
+// behind, which corrupted the surrounding statements.
+func TestSampleDecodedTokens(t *testing.T) {
 	samples := []struct {
 		dir, exe string
 		want     []string // Lines expected in the decompiled modules
@@ -362,6 +362,15 @@ func TestSampleExpressionTokens(t *testing.T) {
 		{fixture.Bascode, "BASCODE.EXE", []string{
 			"fn0123 = (p0116 And Not &HFFFF&) / &H10000& And &HFFFF&", // Not
 			"While Not EOF(1)",
+			"ChDir gv0162$",
+			"ChDrive Left$(gv0162$, 2)",
+			`FileCopy "0342basc.tmp", p0100$`,
+			"Kill p0100$",
+			"Reset",
+			"Erase gv01A8", // Whole array
+			"If Len(Form2.Text1.Text) > 8 Then Let l0024$ = Left$(Form2.Text1.Text, 8) Else l0024$ = Form2.Text1.Text",
+			"Let gv0166$ = big.CMDialog1.Filename",
+			`If gv0166$ = "" Then Error 32755`,
 		}},
 		{fixture.Empire, "EMPIRE.EXE", []string{
 			"If Not gv0248 Then Exit Sub",
@@ -369,6 +378,8 @@ func TestSampleExpressionTokens(t *testing.T) {
 			`l0032 = (Printer.ScaleWidth - Printer.TextWidth("Fax (02)516-4236")) - 0.3`,
 			"l02D2 = ContMap.Picture1.Point(l02CA, l02CC)",
 			"l010E = FreeFile",
+			`Kill "EMPERORS.HOF"`,
+			"For l018E = 1 To UBound(l01BE, 1)", // Whole array
 		}},
 	}
 	for _, s := range samples {
@@ -395,7 +406,8 @@ func TestSampleExpressionTokens(t *testing.T) {
 			}
 			for _, w := range d.Warnings {
 				switch w.Keyword {
-				case "Not ", "Cls", "TextWidth", "Point", "FreeFile", "Err", "Date$", "CurDir$":
+				case "Not ", "Cls", "TextWidth", "Point", "FreeFile", "Err", "Date$", "CurDir$",
+					"ChDir", "ChDrive", "Erase", "Error", "FileCopy", "Kill ", "Let ", "Reset":
 					t.Errorf("%s.%s @ 0x%04X: %q is unhandled", w.ModuleName, w.ProcName, w.PC, w.Keyword)
 				}
 			}
