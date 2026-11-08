@@ -458,6 +458,10 @@ type procDisasmState struct {
 	joinLine         bool                     // The next line continues the last one after a ":" separator
 	inputFile        string                   // File number of an in-flight "Input #" or "Line Input #"
 	inputVars        []string                 // Variables of an in-flight "Input #"
+	printing         bool                     // A Print statement is in flight
+	printFile        bool                     // The in-flight Print statement is "Print #"
+	printDepth       int                      // Stack depth of the Print target; its items are above it
+	printItems       string                   // Items and separators of the in-flight Print statement
 	caseIndentStack  []bool                   // Tracks indentation inside Case blocks for nested Select Case
 	arrayVars        map[uint16]bool          // offset -> true if variable is an array (e.g. ReDim'd)
 	pendingAsType    string                   // In-flight "As <Type>" clause for ReDim
@@ -1191,6 +1195,7 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		s.pendingLet = false
 		s.joinLine = false
 		s.inputFile, s.inputVars = "", nil
+		s.printing = false
 		if !s.flushStatement() && s.ifCond != "" {
 			s.emitLine(fmt.Sprintf("If %s Then", s.ifCond))
 			s.indent++
@@ -1200,6 +1205,7 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 	case kw == ": " || kw == ":":
 		// Statement separator: the next statement continues this line.
 		s.flushStatement()
+		s.printing = false
 		s.joinLine = len(s.lines) > 0
 
 	case kw == "pop.var=":
@@ -1358,6 +1364,9 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 			}
 		}
 		s.push(callExpr)
+
+	case kw == "eom" && s.printing:
+		// Follows the file number of "Print #".
 
 	case kw == "eom":
 		if len(s.stack) > 0 {
@@ -2025,6 +2034,34 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		s.emitStatement(fmt.Sprintf("Line Input %s, %s", s.inputFile, s.pop()))
 		s.inputFile = ""
 
+	case kw == "v0":
+		// Starts a Print statement, or a graphics method, on the object
+		// expression below it.
+		s.startPrint(false)
+
+	case info.TokenID == 91:
+		// Starts "Print #file, ..." on the file number below it.
+		s.startPrint(true)
+
+	case s.printing && (info.TokenID == 112 || info.TokenID == 113 || info.TokenID == 115 || info.TokenID == 116):
+		// A Print item followed by its separator, ";" or ","; 112 and 113
+		// follow Tab() and Spc().
+		if len(s.stack) > s.printDepth {
+			s.printItems += s.pop()
+		}
+		s.printItems += strings.TrimSpace(kw) + " "
+
+	case s.printing && kw == "eol":
+		// Ends a Print statement, after its last item if any.
+		if len(s.stack) > s.printDepth {
+			s.printItems += s.pop()
+		}
+		s.endPrint()
+
+	case s.printing && kw == "eop":
+		// Ends a Print statement after a separator, without a new line.
+		s.endPrint()
+
 	case kw == "Let ":
 		// "Let" comes before the tokens of the assignment it introduces.
 		s.pendingLet = true
@@ -2150,6 +2187,29 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		log.Printf("[WARN] %s.%s @ 0x%04X: unhandled opcode token=%d (0x%04X) alt=0x%04X kw=%q case=%d params=%v",
 			modName, s.proc.Name, pc, info.TokenID, info.TokenID, altToken, kw, info.Case, params)
 	}
+}
+
+// startPrint starts a Print statement on the target on top of the stack.
+func (s *procDisasmState) startPrint(file bool) {
+	s.printing = true
+	s.printFile = file
+	s.printDepth = len(s.stack)
+	s.printItems = ""
+}
+
+// endPrint emits the in-flight Print statement.
+func (s *procDisasmState) endPrint() {
+	items := strings.TrimSpace(s.printItems)
+	target := s.pop()
+	stmt := qualifyMember(target, "Print")
+	if s.printFile {
+		stmt = "Print " + target + ","
+	}
+	if items != "" {
+		stmt += " " + items
+	}
+	s.printing = false
+	s.emitStatement(stmt)
 }
 
 // fileModes names the file modes of Open statements by their operand.

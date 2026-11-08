@@ -315,8 +315,8 @@ var unhandledBudget = []struct {
 	max      int
 }{
 	{fixture.FF, "FF.EXE", 0},
-	{fixture.Bascode, "BASCODE.EXE", 88},
-	{fixture.Empire, "EMPIRE.EXE", 631},
+	{fixture.Bascode, "BASCODE.EXE", 0},
+	{fixture.Empire, "EMPIRE.EXE", 149},
 }
 
 // TestSampleUnhandledOpcodeBudget keeps the number of unhandled tokens of
@@ -378,6 +378,9 @@ func TestSampleDecodedTokens(t *testing.T) {
 			`Open p002C$ + ".LIB" For Output As #1`,
 			"Line Input #1, l0044$",
 			"Close #1",
+			`Print #1, "DESCRIPTION : " + l013C$`,
+			`Printer.Print "Date Stored : " + gv01A8(l005C, 3)`,
+			"Printer.Print",
 			`If LOF(1) >= (31.5 * 1024) Then l008E = fn014A("Unable To Complete Storage Operation.", 9005, "Your Code Section Exceeds 32Kbytes"): p0088 = -10: GoTo L0104`,
 			"Call sub01BC(l0024$, l0026$)",
 			"Call sub0272(gv0166$, gv0172(), l0040)",
@@ -404,6 +407,11 @@ func TestSampleDecodedTokens(t *testing.T) {
 			"Get l010E, , gv01E6$", // No record number
 			"Put l009C, l00A0, l0096(l00A0)",
 			"Loop: Close l0260",
+			"Print #l0070, Str$(0)",
+			`Printer.Print Tab(5); "PO Box 496";`, // No new line
+			`Printer.Print TextPhone.Text; "."`,
+			`If RTrim$(TextAdd1.Text) <> "" Then Printer.Print Tab(8); TextAdd1.Text`,
+			"CountMap.Box_Attackables(Index).Print Tab(21); m0024(gv0518(Index)).Prop_00A0;",
 		}},
 	}
 	for _, s := range samples {
@@ -437,7 +445,8 @@ func TestSampleDecodedTokens(t *testing.T) {
 				case "Not ", "Cls", "TextWidth", "Point", "FreeFile", "Err", "Date$", "CurDir$",
 					"ChDir", "ChDrive", "Erase", "Error", "FileCopy", "Kill ", "Let ", "Reset",
 					"On Error ", "Resume", "Resume Next", "Call ", ": ", ":",
-					"#", "Open ", "Close", "Get", "Put", "Input ", "Line Input ":
+					"#", "Open ", "Close", "Get", "Put", "Input ", "Line Input ",
+					"eol", "eop", "; ":
 					t.Errorf("%s.%s @ 0x%04X: %q is unhandled", w.ModuleName, w.ProcName, w.PC, w.Keyword)
 				}
 			}
