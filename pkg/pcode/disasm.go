@@ -1508,7 +1508,8 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 	case kw == "exe":
 		// VM execution / frame setup / method dispatch glue (no-op on expression stack)
 
-	case kw == "call":
+	case kw == "call" || kw == "Call ":
+		// A procedure call statement, written with or without "Call".
 		argCount := 0
 		var targetProc *Procedure
 		if len(params) >= 2 {
@@ -1536,7 +1537,12 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		if targetName != "" {
 			line := targetName
 			formattedArgs := formatArgList(args)
-			if formattedArgs != "" {
+			switch {
+			case kw == "Call " && formattedArgs != "":
+				line = fmt.Sprintf("Call %s(%s)", targetName, formattedArgs)
+			case kw == "Call ":
+				line = "Call " + targetName
+			case formattedArgs != "":
 				line = fmt.Sprintf("%s %s", targetName, formattedArgs)
 			}
 			s.emitStatement(line)

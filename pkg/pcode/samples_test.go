@@ -315,8 +315,8 @@ var unhandledBudget = []struct {
 	max      int
 }{
 	{fixture.FF, "FF.EXE", 0},
-	{fixture.Bascode, "BASCODE.EXE", 374},
-	{fixture.Empire, "EMPIRE.EXE", 1330},
+	{fixture.Bascode, "BASCODE.EXE", 338},
+	{fixture.Empire, "EMPIRE.EXE", 1065},
 }
 
 // TestSampleUnhandledOpcodeBudget keeps the number of unhandled tokens of
@@ -373,6 +373,10 @@ func TestSampleDecodedTokens(t *testing.T) {
 			`If gv0166$ = "" Then Error 32755`,
 			"On Error GoTo L012E",
 			"Resume L0122",
+			"Call sub0251",
+			"Call sub01BC(l0024$, l0026$)",
+			"Call sub0272(gv0166$, gv0172(), l0040)",
+			`If gv01DE = 1 Then Call sub0294(gv01A8(0, 2) + ".LIB")`,
 		}},
 		{fixture.Empire, "EMPIRE.EXE", []string{
 			"If Not gv0248 Then Exit Sub",
@@ -383,6 +387,8 @@ func TestSampleDecodedTokens(t *testing.T) {
 			`Kill "EMPERORS.HOF"`,
 			"For l018E = 1 To UBound(l01BE, 1)", // Whole array
 			"On Error Resume Next",
+			"Call sub0202(l0110(), gv0336(gv039A), l0186)",
+			"If gv01EE = 0 Then Call extsub0074(l0022, l0028)", // Declared procedure
 		}},
 	}
 	for _, s := range samples {
@@ -411,7 +417,7 @@ func TestSampleDecodedTokens(t *testing.T) {
 				switch w.Keyword {
 				case "Not ", "Cls", "TextWidth", "Point", "FreeFile", "Err", "Date$", "CurDir$",
 					"ChDir", "ChDrive", "Erase", "Error", "FileCopy", "Kill ", "Let ", "Reset",
-					"On Error ", "Resume", "Resume Next":
+					"On Error ", "Resume", "Resume Next", "Call ":
 					t.Errorf("%s.%s @ 0x%04X: %q is unhandled", w.ModuleName, w.ProcName, w.PC, w.Keyword)
 				}
 			}
