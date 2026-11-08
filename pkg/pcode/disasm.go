@@ -767,10 +767,11 @@ func (s *procDisasmState) getVarName(offset uint16) string {
 }
 
 // isLabelJump reports whether a keyword is a statement whose operand is a jump
-// to a line label.
+// to a line label. The operands of "On Error" and "Resume" can also be
+// special values, which lie outside the procedure and get no label.
 func isLabelJump(kw string) bool {
 	switch strings.TrimSpace(kw) {
-	case "GoTo", "GoSub":
+	case "GoTo", "GoSub", "On Error", "Resume":
 		return true
 	}
 	return false
@@ -780,6 +781,22 @@ func isLabelJump(kw string) bool {
 // in the procedure's code segment; labels are named by their bytecode offset.
 func (s *procDisasmState) labelName(operand uint16) string {
 	return fmt.Sprintf("L%04X", int(operand)-int(s.proc.CodeOffset))
+}
+
+// labelAt names the line label at a jump operand, if it lies within the
+// procedure's bytecode.
+func (s *procDisasmState) labelAt(operand uint16) (string, bool) {
+	target := int(operand) - int(s.proc.CodeOffset)
+	if target < 0 || target >= len(s.bc) {
+		return "", false
+	}
+	return s.labelName(operand), true
+}
+
+// hasLabelAt reports whether a jump operand lies within the procedure.
+func (s *procDisasmState) hasLabelAt(operand uint16) bool {
+	_, ok := s.labelAt(operand)
+	return ok
 }
 
 // addLabel records the line label at a jump operand if it lies within the
@@ -1792,6 +1809,20 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 	case kw == "Return":
 		s.emitLine("Return")
 
+	case kw == "On Error " && len(params) == 1 && params[0] == onErrorResumeNext:
+		s.emitStatement("On Error Resume Next")
+
+	case kw == "On Error " && len(params) == 1 && s.hasLabelAt(params[0]):
+		target, _ := s.labelAt(params[0])
+		s.emitStatement("On Error GoTo " + target)
+
+	case kw == "Resume" && len(params) == 1 && s.hasLabelAt(params[0]):
+		target, _ := s.labelAt(params[0])
+		s.emitStatement("Resume " + target)
+
+	case (kw == "Resume" || kw == "Resume Next") && info.NumParams == 0:
+		s.emitStatement(kw)
+
 	case strings.TrimSpace(kw) == "Do":
 		s.emitLine("Do")
 		s.indent++
@@ -2048,6 +2079,10 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 			modName, s.proc.Name, pc, info.TokenID, info.TokenID, altToken, kw, info.Case, params)
 	}
 }
+
+// onErrorResumeNext is the operand of "On Error Resume Next"; other
+// operands of "On Error" are jump targets.
+const onErrorResumeNext = 0xFFFE
 
 // wholeArray is set in the dimension count of an array reference that names
 // the whole array instead of an element.

@@ -141,12 +141,12 @@ func TestSampleEventNames(t *testing.T) {
 }
 
 var (
-	labelRef = regexp.MustCompile(`\b(?:GoTo|GoSub) (L[0-9A-F]{4})\b`)
+	labelRef = regexp.MustCompile(`\b(?:GoTo|GoSub|Resume) (L[0-9A-F]{4})\b`)
 	labelDef = regexp.MustCompile(`(?m)^(L[0-9A-F]{4}):\r?$`)
 )
 
-// TestSampleJumpTargetsHaveLabels requires every GoTo and GoSub target to be
-// defined as a line label, starting in the first column, in the same procedure.
+// TestSampleJumpTargetsHaveLabels requires every GoTo, GoSub, On Error GoTo
+// and Resume target to be defined as a line label, starting in the first column, in the same procedure.
 func TestSampleJumpTargetsHaveLabels(t *testing.T) {
 	samples := []struct{ dir, exe string }{
 		{fixture.FF, "FF.EXE"},
@@ -179,7 +179,7 @@ func TestSampleJumpTargetsHaveLabels(t *testing.T) {
 					}
 				}
 			}
-			t.Logf("%d GoTo/GoSub references checked", refs)
+			t.Logf("%d label references checked", refs)
 		})
 	}
 }
@@ -315,8 +315,8 @@ var unhandledBudget = []struct {
 	max      int
 }{
 	{fixture.FF, "FF.EXE", 0},
-	{fixture.Bascode, "BASCODE.EXE", 395},
-	{fixture.Empire, "EMPIRE.EXE", 1340},
+	{fixture.Bascode, "BASCODE.EXE", 374},
+	{fixture.Empire, "EMPIRE.EXE", 1330},
 }
 
 // TestSampleUnhandledOpcodeBudget keeps the number of unhandled tokens of
@@ -371,6 +371,8 @@ func TestSampleDecodedTokens(t *testing.T) {
 			"If Len(Form2.Text1.Text) > 8 Then Let l0024$ = Left$(Form2.Text1.Text, 8) Else l0024$ = Form2.Text1.Text",
 			"Let gv0166$ = big.CMDialog1.Filename",
 			`If gv0166$ = "" Then Error 32755`,
+			"On Error GoTo L012E",
+			"Resume L0122",
 		}},
 		{fixture.Empire, "EMPIRE.EXE", []string{
 			"If Not gv0248 Then Exit Sub",
@@ -380,6 +382,7 @@ func TestSampleDecodedTokens(t *testing.T) {
 			"l010E = FreeFile",
 			`Kill "EMPERORS.HOF"`,
 			"For l018E = 1 To UBound(l01BE, 1)", // Whole array
+			"On Error Resume Next",
 		}},
 	}
 	for _, s := range samples {
@@ -407,7 +410,8 @@ func TestSampleDecodedTokens(t *testing.T) {
 			for _, w := range d.Warnings {
 				switch w.Keyword {
 				case "Not ", "Cls", "TextWidth", "Point", "FreeFile", "Err", "Date$", "CurDir$",
-					"ChDir", "ChDrive", "Erase", "Error", "FileCopy", "Kill ", "Let ", "Reset":
+					"ChDir", "ChDrive", "Erase", "Error", "FileCopy", "Kill ", "Let ", "Reset",
+					"On Error ", "Resume", "Resume Next":
 					t.Errorf("%s.%s @ 0x%04X: %q is unhandled", w.ModuleName, w.ProcName, w.PC, w.Keyword)
 				}
 			}
