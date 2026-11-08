@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"vb3dec/pkg/frm"
@@ -195,8 +196,13 @@ func main() {
 
 			totalLocal := 0
 			totalDecl := 0
+			// Unhandled tokens of each module's .bas; the copy of a form's
+			// code appended to its .FRM repeats them and is not counted.
+			var unhandled []pcode.UnhandledOpcodeWarning
 			for _, mod := range pcodeProj.Modules {
+				before := len(d.Warnings)
 				code, err := d.DisassembleModule(mod)
+				unhandled = append(unhandled, d.Warnings[before:]...)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error decompiling module %s: %v\n", mod.Name, err)
 					hadErrors = true
@@ -263,6 +269,9 @@ func main() {
 			fmt.Println("-------------------------------------------------------------")
 			fmt.Printf("Total: %d modules, %d procedures (%d local bytecode, %d API declarations).\n\n",
 				len(pcodeProj.Modules), totalLocal+totalDecl, totalLocal, totalDecl)
+			if len(unhandled) > 0 {
+				fmt.Print(summarizeUnhandled(unhandled))
+			}
 
 			// Generate Project .MAK file
 			baseExe := filepath.Base(targetExe)
@@ -353,6 +362,44 @@ func main() {
 	if hadErrors {
 		os.Exit(1)
 	}
+}
+
+// summarizeUnhandled describes the P-code tokens the decompiler could not
+// decode: how many, in how many procedures, and the most frequent ones.
+func summarizeUnhandled(ws []pcode.UnhandledOpcodeWarning) string {
+	type tokenCount struct {
+		label string
+		n     int
+	}
+	procs := make(map[string]bool)
+	byToken := make(map[string]*tokenCount)
+	var counts []*tokenCount
+	for _, w := range ws {
+		procs[w.ModuleName+"."+w.ProcName] = true
+		label := fmt.Sprintf("%q (token %d)", w.Keyword, w.TokenID)
+		tc := byToken[label]
+		if tc == nil {
+			tc = &tokenCount{label: label}
+			byToken[label] = tc
+			counts = append(counts, tc)
+		}
+		tc.n++
+	}
+	sort.SliceStable(counts, func(i, j int) bool { return counts[i].n > counts[j].n })
+
+	const shown = 8
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Unhandled P-code: %d tokens in %d procedures, marked in the code with %q.\n",
+		len(ws), len(procs), strings.TrimSpace(pcode.UnhandledMarker))
+	for i, tc := range counts {
+		if i == shown {
+			fmt.Fprintf(&sb, "  ... and %d other tokens\n", len(counts)-shown)
+			break
+		}
+		fmt.Fprintf(&sb, "  %5d  %s\n", tc.n, tc.label)
+	}
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 func summarizeAssets(assets []*frm.ExtractedAsset) string {

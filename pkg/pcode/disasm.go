@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -458,6 +459,12 @@ type procDisasmState struct {
 	arrayVars        map[uint16]bool          // offset -> true if variable is an array (e.g. ReDim'd)
 	pendingAsType    string                   // In-flight "As <Type>" clause for ReDim
 	warnings         []UnhandledOpcodeWarning // Warnings for unhandled opcodes
+	// unhandledNotes holds, by index into lines, the unhandled tokens to
+	// report in a comment before that line (index len(lines): at the end).
+	// They are inserted when the procedure is rendered, so they never become
+	// the last line that a single-line Else is appended to.
+	unhandledNotes map[int][]string
+	noteIndent     map[int]int
 }
 
 // targetModel returns the model of the object a property reference applies to:
@@ -671,6 +678,24 @@ func (s *procDisasmState) emitStatement(stmt string) {
 		return
 	}
 	s.emitLine(stmt)
+}
+
+// identifierKeyword matches opcode keywords that are plain Basic names, such
+// as "Err", "Date$" or "TextWidth", as opposed to punctuation ("; ") or
+// internal mnemonics with spaces or dots.
+var identifierKeyword = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*[$%&!#@]?$`)
+
+func isIdentifierKeyword(kw string) bool {
+	return identifierKeyword.MatchString(kw)
+}
+
+// qualifyMember returns member applied to the object expression target, or
+// member alone when it applies to the form itself.
+func qualifyMember(target, member string) string {
+	if target == "" || target == "Me" {
+		return member
+	}
+	return target + "." + member
 }
 
 func formatArgList(args []string) string {
@@ -1585,9 +1610,14 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		l := s.pop()
 		s.push(fmt.Sprintf("%s %s %s", l, kw, r))
 
-	case kw == "Not":
+	case kw == "Not ":
+		// Unary operator on the top of the stack. Explicit parentheses are
+		// their own token, so the operand is emitted as compiled.
 		arg := s.pop()
-		s.push(fmt.Sprintf("Not(%s)", arg))
+		if arg == "" {
+			arg = "0"
+		}
+		s.push("Not " + arg)
 
 	case kw == "Len":
 		arg := s.pop()
@@ -1948,6 +1978,26 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		}
 		s.push(fmt.Sprintf("%s(%s)", kw, formatArgList(args)))
 
+	case info.Flags == 9 && info.BitForward2 == 0 && isIdentifierKeyword(kw):
+		// Graphics method without arguments (Cls, Scale) on the object
+		// expression below it: "Picture1.Cls", or "Cls" for the form itself.
+		s.emitStatement(qualifyMember(s.pop(), kw))
+
+	case info.Flags == 10 && info.BitForward2 > 0 && isIdentifierKeyword(kw):
+		// Graphics method that returns a value (TextWidth, TextHeight, Point):
+		// the object expression is below its arguments.
+		args := make([]string, info.BitForward2)
+		for i := len(args) - 1; i >= 0; i-- {
+			args[i] = s.pop()
+		}
+		target := s.pop()
+		s.push(fmt.Sprintf("%s(%s)", qualifyMember(target, kw), strings.Join(args, ", ")))
+
+	case info.Flags == 4 && info.BitForward2 == 0 && isIdentifierKeyword(kw):
+		// Function or value without arguments: Err, Erl, FreeFile, Date$,
+		// Time$, Now, CurDir$, Dir$, Command$, Nothing, ...
+		s.push(kw)
+
 	default:
 		if kw != "" && kw != "?" {
 			s.push(kw)
@@ -1967,9 +2017,41 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 			Params:     params,
 		}
 		s.warnings = append(s.warnings, warn)
+		s.noteUnhandled(info, pc)
 		log.Printf("[WARN] %s.%s @ 0x%04X: unhandled opcode token=%d (0x%04X) alt=0x%04X kw=%q case=%d params=%v",
 			modName, s.proc.Name, pc, info.TokenID, info.TokenID, altToken, kw, info.Case, params)
 	}
+}
+
+// UnhandledMarker starts the comment that marks code the decompiler could
+// not decode, so that it can be found in the output.
+const UnhandledMarker = "' vb3dec: unhandled P-code: "
+
+// noteUnhandled records an unhandled token for a comment before the next
+// emitted line.
+func (s *procDisasmState) noteUnhandled(info *OpcodeInfo, pc int) {
+	if s.unhandledNotes == nil {
+		s.unhandledNotes = make(map[int][]string)
+		s.noteIndent = make(map[int]int)
+	}
+	at := len(s.lines)
+	if _, ok := s.noteIndent[at]; !ok {
+		s.noteIndent[at] = s.indent
+	}
+	s.unhandledNotes[at] = append(s.unhandledNotes[at],
+		fmt.Sprintf("%q (token %d @ 0x%04X)", info.Keyword, info.TokenID, pc))
+}
+
+// writeUnhandledNote writes the comment for the unhandled tokens noted before line i.
+func (s *procDisasmState) writeUnhandledNote(sb *strings.Builder, i int) {
+	notes := s.unhandledNotes[i]
+	if len(notes) == 0 {
+		return
+	}
+	sb.WriteString(strings.Repeat("    ", s.noteIndent[i]))
+	sb.WriteString(UnhandledMarker)
+	sb.WriteString(strings.Join(notes, ", "))
+	sb.WriteString("\n")
 }
 
 func (s *procDisasmState) renderProcedure() string {
@@ -2060,10 +2142,12 @@ func (s *procDisasmState) renderProcedure() string {
 		sb.WriteString("\n")
 	}
 
-	for _, line := range s.lines {
+	for i, line := range s.lines {
+		s.writeUnhandledNote(&sb, i)
 		sb.WriteString(line)
 		sb.WriteString("\n")
 	}
+	s.writeUnhandledNote(&sb, len(s.lines))
 
 	sb.WriteString(fmt.Sprintf("End %s", procType))
 

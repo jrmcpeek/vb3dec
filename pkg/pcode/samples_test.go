@@ -306,3 +306,99 @@ func TestSampleCodeEncodesAsWindows1252(t *testing.T) {
 		})
 	}
 }
+
+// unhandledBudget is the number of P-code tokens the decompiler cannot decode
+// yet in each sample's modules. Decoding more of them lowers it; lower the
+// budget with them so that it can never grow back.
+var unhandledBudget = []struct {
+	dir, exe string
+	max      int
+}{
+	{fixture.FF, "FF.EXE", 0},
+	{fixture.Bascode, "BASCODE.EXE", 417},
+	{fixture.Empire, "EMPIRE.EXE", 1344},
+}
+
+// TestSampleUnhandledOpcodeBudget keeps the number of unhandled tokens of
+// each sample within its budget and requires each of them to be marked in
+// the decompiled code.
+func TestSampleUnhandledOpcodeBudget(t *testing.T) {
+	for _, s := range unhandledBudget {
+		t.Run(s.dir, func(t *testing.T) {
+			proj := parseSample(t, s.dir, s.exe)
+			d := pcode.NewDisassembler(proj)
+			markers := 0
+			for _, m := range proj.Modules {
+				code, err := d.DisassembleModule(m)
+				if err != nil {
+					t.Fatalf("DisassembleModule(%s): %v", m.Name, err)
+				}
+				for _, line := range strings.Split(code, "\n") {
+					if i := strings.Index(line, pcode.UnhandledMarker); i >= 0 {
+						markers += strings.Count(line[i:], "(token ")
+					}
+				}
+			}
+			got := len(d.Warnings)
+			if got > s.max {
+				t.Errorf("%d unhandled tokens, want at most %d", got, s.max)
+			} else if got < s.max {
+				t.Logf("%d unhandled tokens, under the budget of %d: lower the budget", got, s.max)
+			}
+			if markers != got {
+				t.Errorf("%d unhandled tokens are marked in the code, want %d", markers, got)
+			}
+		})
+	}
+}
+
+// TestSampleExpressionTokens checks expression tokens whose omission left
+// their operands behind, which corrupted the surrounding statements.
+func TestSampleExpressionTokens(t *testing.T) {
+	samples := []struct {
+		dir, exe string
+		want     []string // Lines expected in the decompiled modules
+	}{
+		{fixture.Bascode, "BASCODE.EXE", []string{
+			"fn0123 = (p0116 And Not &HFFFF&) / &H10000& And &HFFFF&", // Not
+			"While Not EOF(1)",
+		}},
+		{fixture.Empire, "EMPIRE.EXE", []string{
+			"If Not gv0248 Then Exit Sub",
+			"CountMap.Box_Attackables(Index).Cls", // Method on a control, not the form
+			`l0032 = (Printer.ScaleWidth - Printer.TextWidth("Fax (02)516-4236")) - 0.3`,
+			"l02D2 = ContMap.Picture1.Point(l02CA, l02CC)",
+			"l010E = FreeFile",
+		}},
+	}
+	for _, s := range samples {
+		t.Run(s.dir, func(t *testing.T) {
+			proj := parseSample(t, s.dir, s.exe)
+			d := pcode.NewDisassembler(proj)
+			var all strings.Builder
+			for _, m := range proj.Modules {
+				code, err := d.DisassembleModule(m)
+				if err != nil {
+					t.Fatalf("DisassembleModule(%s): %v", m.Name, err)
+				}
+				all.WriteString(code)
+				all.WriteString("\n")
+			}
+			lines := make(map[string]bool)
+			for _, line := range strings.Split(all.String(), "\n") {
+				lines[strings.TrimSpace(line)] = true
+			}
+			for _, want := range s.want {
+				if !lines[want] {
+					t.Errorf("missing line %q", want)
+				}
+			}
+			for _, w := range d.Warnings {
+				switch w.Keyword {
+				case "Not ", "Cls", "TextWidth", "Point", "FreeFile", "Err", "Date$", "CurDir$":
+					t.Errorf("%s.%s @ 0x%04X: %q is unhandled", w.ModuleName, w.ProcName, w.PC, w.Keyword)
+				}
+			}
+		})
+	}
+}

@@ -7,13 +7,22 @@
 ## 1. Not Yet Implemented
 
 ### 1.1 Statements Without a Decoder
-Tokens without a handler are logged to standard error as `[WARN] ... unhandled opcode` and emitted as their bare keyword. These statements are affected; none of them occur in `FF.EXE`:
+Tokens without a handler are emitted as their bare keyword, and their operands can be left behind on separate lines or attached to the next statement. Each one is marked in the decompiled code with a comment before the affected line, which names the token and its offset in the procedure's bytecode:
+
+```vb
+' vb3dec: unhandled P-code: "#" (token 105 @ 0x002E), "Open " (token 142 @ 0x0030)
+```
+
+The console output ends the module table with the number of unhandled tokens and the most frequent ones, and each token is also logged to standard error as `[WARN] ... unhandled opcode`. `FF.EXE` has none; `BASCODE.EXE` has 417 and `EMPIRE.EXE` 1,344, and `TestSampleUnhandledOpcodeBudget` keeps these numbers from growing. These statements are affected:
 - The `:` statement separator. Statements after it are emitted on separate lines, which moves them out of a single-line `If`.
-- `Call`, `Let`, and the arguments of `ChDir` and `ChDrive`.
+- `Call`, `Let`, `Kill`, `FileCopy`, `Reset`, `Error`, and the arguments of `ChDir` and `ChDrive`.
 - `On Error` and `Resume`.
-- File I/O: `Open`, `Close`, `Input #`, `Line Input #`, `Print #`, and `#` file numbers.
+- File I/O: `Open`, `Close`, `Input #`, `Line Input #`, `Print #`, `Get`, `Put`, and `#` file numbers.
+- The `Print` method of forms, picture boxes and `Printer`, and its `;` and `,` separators (the `v0`, `eol`, and `eop` tokens).
+- Graphics methods with coordinates: `Line`, `Circle`, `PSet`, and `Scale (x1, y1)-(x2, y2)`. `Cls`, `Scale` without arguments, and the `TextWidth`, `TextHeight`, and `Point` functions are decoded.
 - The array operand of `Erase`.
 - `On <expression> GoTo` and `On <expression> GoSub`. The statement is skipped and its selector expression is left behind, where it can corrupt the next statement; its targets still get line labels. No sample program uses these statements.
+- Tokens whose meaning is unknown: 23 and 96, which have no keyword in the opcode tables, and `fin` (282), which has two parameter words like the `met` method call and occurs in `EMPIRE.EXE` as the value assigned to `Picture` properties.
 
 Handlers belong in `decodeInstruction` in `pkg/pcode/disasm.go`.
 
