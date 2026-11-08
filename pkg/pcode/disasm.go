@@ -1202,6 +1202,18 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 			s.ifCond = ""
 		}
 
+	case info.TokenID >= 96 && info.TokenID <= 99:
+		// A coordinate pair of a graphics method: "(x, y)", or the end point
+		// of a Line, "-(x, y)", either one relative with "Step". Token 98
+		// is "-", which must not be decoded as a subtraction.
+		y := s.pop()
+		x := s.pop()
+		s.push(fmt.Sprintf("%s(%s, %s)", info.Keyword, x, y))
+
+	case info.TokenID == 23:
+		// The omitted lower bound of a ReDim dimension.
+		s.push(defaultLowerBound)
+
 	case kw == ": " || kw == ":":
 		// Statement separator: the next statement continues this line.
 		s.flushStatement()
@@ -1448,7 +1460,7 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 				if len(s.stack) > 0 {
 					lower = s.pop()
 				}
-				if lower != "" {
+				if lower != "" && lower != defaultLowerBound {
 					dims[d] = fmt.Sprintf("%s To %s", lower, upper)
 				} else {
 					dims[d] = upper
@@ -2058,6 +2070,35 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		}
 		s.endPrint()
 
+	case s.printing && info.TokenID >= 92 && info.TokenID <= 95:
+		// v1 to v4: the number of optional arguments of a graphics method,
+		// which are already on the stack.
+
+	case s.printing && info.TokenID == 133 && len(params) == 1 && params[0] == lineBoxFilled:
+		// Line [(x1, y1)]-(x2, y2), color, BF
+		args := s.graphicsArgs()
+		stmt := qualifyMember(s.pop(), "Line") + " "
+		for i, a := range args {
+			if i > 0 && !strings.HasPrefix(a, "-") {
+				stmt += ", "
+			}
+			stmt += a
+		}
+		s.emitStatement(stmt + ", BF")
+
+	case s.printing && kw == "Circle":
+		// Circle (x, y), radius[, color[, start, end[, aspect]]]
+		args := s.graphicsArgs()
+		s.emitStatement(qualifyMember(s.pop(), "Circle") + " " + formatArgList(args))
+
+	case kw == "fin" && len(params) == 2 && runtimeFunctions[params[0]] != "":
+		// A call to a function of the run-time library.
+		args := make([]string, params[1])
+		for i := len(args) - 1; i >= 0; i-- {
+			args[i] = s.pop()
+		}
+		s.push(fmt.Sprintf("%s(%s)", runtimeFunctions[params[0]], strings.Join(args, ", ")))
+
 	case s.printing && kw == "eop":
 		// Ends a Print statement after a separator, without a new line.
 		s.endPrint()
@@ -2210,6 +2251,35 @@ func (s *procDisasmState) endPrint() {
 	}
 	s.printing = false
 	s.emitStatement(stmt)
+}
+
+// graphicsArgs pops the arguments of the in-flight graphics method, which are
+// above its target object on the stack.
+func (s *procDisasmState) graphicsArgs() []string {
+	n := len(s.stack) - s.printDepth
+	if n < 0 {
+		n = 0
+	}
+	args := make([]string, n)
+	for i := n - 1; i >= 0; i-- {
+		args[i] = s.pop()
+	}
+	s.printing = false
+	return args
+}
+
+// defaultLowerBound stands for the omitted lower bound of a ReDim dimension.
+const defaultLowerBound = "<default lower bound>"
+
+// lineBoxFilled is the operand of a Line statement that draws a filled box,
+// "BF". It is inferred from EMPIRE.EXE, which draws its color swatches so;
+// the operands of plain lines and of unfilled boxes ("B") are unknown.
+const lineBoxFilled = 2
+
+// runtimeFunctions names the functions of the run-time library that the
+// "fin" token calls, by its first operand.
+var runtimeFunctions = map[uint16]string{
+	0x8043: "LoadPicture",
 }
 
 // fileModes names the file modes of Open statements by their operand.

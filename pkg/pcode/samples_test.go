@@ -316,7 +316,7 @@ var unhandledBudget = []struct {
 }{
 	{fixture.FF, "FF.EXE", 0},
 	{fixture.Bascode, "BASCODE.EXE", 0},
-	{fixture.Empire, "EMPIRE.EXE", 149},
+	{fixture.Empire, "EMPIRE.EXE", 0},
 }
 
 // TestSampleUnhandledOpcodeBudget keeps the number of unhandled tokens of
@@ -412,6 +412,13 @@ func TestSampleDecodedTokens(t *testing.T) {
 			`Printer.Print TextPhone.Text; "."`,
 			`If RTrim$(TextAdd1.Text) <> "" Then Printer.Print Tab(8); TextAdd1.Text`,
 			"CountMap.Box_Attackables(Index).Print Tab(21); m0024(gv0518(Index)).Prop_00A0;",
+			"CountMap.Box_Attackee_Status.Line (100, 30)-(250, 170), m0024(p0006).Prop_00A8, BF",
+			"CountMap.Picture1.Line (l0124, l0122)-(l0124 + 260, l0122 + 200), QBColor(0), BF",
+			"CountMap.Picture1.Circle (l02E4 - 50, l02E6 + 50), 80, 0",
+			`CountMap.Box_Blast.Picture = LoadPicture(gv01F2$ + "\" + "tb" + LTrim$(Str$(l005E)) + ".bmp")`,
+			"Picture3.Picture = LoadPicture()", // Clears the picture
+			"ReDim gv04AC(-1 To 6, 2)",         // Omitted lower bound
+			"ReDim gv0444(6, 8)",
 		}},
 	}
 	for _, s := range samples {
@@ -446,7 +453,7 @@ func TestSampleDecodedTokens(t *testing.T) {
 					"ChDir", "ChDrive", "Erase", "Error", "FileCopy", "Kill ", "Let ", "Reset",
 					"On Error ", "Resume", "Resume Next", "Call ", ": ", ":",
 					"#", "Open ", "Close", "Get", "Put", "Input ", "Line Input ",
-					"eol", "eop", "; ":
+					"eol", "eop", "; ", "v0", "v1", "Line ", "Circle", "fin", "":
 					t.Errorf("%s.%s @ 0x%04X: %q is unhandled", w.ModuleName, w.ProcName, w.PC, w.Keyword)
 				}
 			}

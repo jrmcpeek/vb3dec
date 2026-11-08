@@ -10,15 +10,15 @@
 Tokens without a handler are emitted as their bare keyword, and their operands can be left behind on separate lines or attached to the next statement. Each one is marked in the decompiled code with a comment before the affected line, which names the token and its offset in the procedure's bytecode:
 
 ```vb
-' vb3dec: unhandled P-code: "" (token 96 @ 0x00B6), "Line " (token 133 @ 0x00D6)
+' vb3dec: unhandled P-code: "Write " (token 162 @ 0x002E)
 ```
 
-The console output ends the module table with the number of unhandled tokens and the most frequent ones, and each token is also logged to standard error as `[WARN] ... unhandled opcode`. `FF.EXE` and `BASCODE.EXE` have none and `EMPIRE.EXE` has 149, and `TestSampleUnhandledOpcodeBudget` keeps these numbers from growing. These statements are affected:
-- `On Error GoTo 0`, whose encoding is unknown because no sample program uses it.
-- File I/O statements that no sample program uses: `Write #`, `Seek`, `Lock`, `Unlock`, `Put` without a record number, and `Open` with an `Access` or `Lock` clause.
-- Graphics methods with coordinates: `Line`, `Circle`, `PSet`, and `Scale (x1, y1)-(x2, y2)`.
-- `On <expression> GoTo` and `On <expression> GoSub`. The statement is skipped and its selector expression is left behind, where it can corrupt the next statement; its targets still get line labels. No sample program uses these statements.
-- Tokens whose meaning is unknown: 23 and 96, which have no keyword in the opcode tables, and `fin` (282), which has two parameter words like the `met` method call and occurs in `EMPIRE.EXE` as the value assigned to `Picture` properties.
+The console output ends the module table with the number of unhandled tokens and the most frequent ones, and each token is also logged to standard error as `[WARN] ... unhandled opcode`. None of the sample programs has any, and `TestSampleUnhandledOpcodeBudget` keeps it so. These statements, which no sample program uses, are affected:
+- `On Error GoTo 0`.
+- File I/O: `Write #`, `Seek`, `Lock`, `Unlock`, `Put` without a record number, and `Open` with an `Access` or `Lock` clause.
+- Graphics methods: `Line` other than a filled box (`BF`), `PSet`, and `Scale (x1, y1)-(x2, y2)`.
+- `On <expression> GoTo` and `On <expression> GoSub`. The statement is skipped and its selector expression is left behind, where it can corrupt the next statement; its targets still get line labels.
+- Run-time library functions called through the `fin` token other than `LoadPicture`. The token's first operand identifies the function.
 
 Handlers belong in `decodeInstruction` in `pkg/pcode/disasm.go`.
 
@@ -51,6 +51,7 @@ Control array members are recognized from their form records, and their event pr
 - **Variable types:** Types are inferred from P-code variable references and from how values are used, not from stack slot sizes. Type conversions contribute only for the conversion tokens the samples use.
 - **Property names in code:** A property is named from the model of the object it applies to: a form, a control, a global object (`App`, `Clipboard`, `Printer`, `Screen`), or a parameter that every call site passes the same kind of form or control (declared `As Form` or `As Control`). For an object of unknown type, such as a parameter that receives different control types or a variable assigned with `Set`, a generic mapping guesses the name. No sample program has such a reference.
 - **Form window bounds:** Forms store their client area. The outer `Left`, `Top`, `Width`, and `Height` written to `.FRM` files are derived from it with fixed border and caption sizes for the form's `BorderStyle`.
+- **Filled boxes:** A `Line` statement's operand selects a plain line, a box (`B`), or a filled box (`BF`). Operand 2 is decoded as `BF` because `EMPIRE.EXE` uses it to draw color swatches; the other operands are unknown.
 - **Project window settings:** The `ProjWinSize` and `ProjWinShow` lines of the `.MAK` file are fixed defaults; executables do not record them.
 
 ---
