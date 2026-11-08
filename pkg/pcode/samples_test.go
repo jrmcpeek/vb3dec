@@ -315,8 +315,8 @@ var unhandledBudget = []struct {
 	max      int
 }{
 	{fixture.FF, "FF.EXE", 0},
-	{fixture.Bascode, "BASCODE.EXE", 338},
-	{fixture.Empire, "EMPIRE.EXE", 1065},
+	{fixture.Bascode, "BASCODE.EXE", 206},
+	{fixture.Empire, "EMPIRE.EXE", 860},
 }
 
 // TestSampleUnhandledOpcodeBudget keeps the number of unhandled tokens of
@@ -357,7 +357,7 @@ func TestSampleUnhandledOpcodeBudget(t *testing.T) {
 func TestSampleDecodedTokens(t *testing.T) {
 	samples := []struct {
 		dir, exe string
-		want     []string // Lines expected in the decompiled modules
+		want     []string // Lines or statements expected in the decompiled modules
 	}{
 		{fixture.Bascode, "BASCODE.EXE", []string{
 			"fn0123 = (p0116 And Not &HFFFF&) / &H10000& And &HFFFF&", // Not
@@ -374,6 +374,8 @@ func TestSampleDecodedTokens(t *testing.T) {
 			"On Error GoTo L012E",
 			"Resume L0122",
 			"Call sub0251",
+			"ChDir gv0162$: ChDrive Left$(gv0162$, 2)",
+			`If LOF(1) >= (31.5 * 1024) Then l008E = fn014A("Unable To Complete Storage Operation.", 9005, "Your Code Section Exceeds 32Kbytes"): p0088 = -10: GoTo L0104`,
 			"Call sub01BC(l0024$, l0026$)",
 			"Call sub0272(gv0166$, gv0172(), l0040)",
 			`If gv01DE = 1 Then Call sub0294(gv01A8(0, 2) + ".LIB")`,
@@ -389,6 +391,9 @@ func TestSampleDecodedTokens(t *testing.T) {
 			"On Error Resume Next",
 			"Call sub0202(l0110(), gv0336(gv039A), l0186)",
 			"If gv01EE = 0 Then Call extsub0074(l0022, l0028)", // Declared procedure
+			`If gv0552 = 0 Then gv0552 = 1: Button_Blitz.Caption = "On" Else gv0552 = 0: Button_Blitz.Caption = "Off"`,
+			"For l00F2 = 1 To p00E6: p00DE(l00F2) = l00E8(l00F2): Next l00F2",
+			`Case "4": OptionMoneyOrder.Value = -1`, // Separator after Case
 		}},
 	}
 	for _, s := range samples {
@@ -407,6 +412,10 @@ func TestSampleDecodedTokens(t *testing.T) {
 			lines := make(map[string]bool)
 			for _, line := range strings.Split(all.String(), "\n") {
 				lines[strings.TrimSpace(line)] = true
+				// The statements of a line with ":" separators also match.
+				for _, stmt := range strings.Split(line, ": ") {
+					lines[strings.TrimSpace(stmt)] = true
+				}
 			}
 			for _, want := range s.want {
 				if !lines[want] {
@@ -417,7 +426,7 @@ func TestSampleDecodedTokens(t *testing.T) {
 				switch w.Keyword {
 				case "Not ", "Cls", "TextWidth", "Point", "FreeFile", "Err", "Date$", "CurDir$",
 					"ChDir", "ChDrive", "Erase", "Error", "FileCopy", "Kill ", "Let ", "Reset",
-					"On Error ", "Resume", "Resume Next", "Call ":
+					"On Error ", "Resume", "Resume Next", "Call ", ": ", ":":
 					t.Errorf("%s.%s @ 0x%04X: %q is unhandled", w.ModuleName, w.ProcName, w.PC, w.Keyword)
 				}
 			}

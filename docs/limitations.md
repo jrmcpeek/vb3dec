@@ -13,8 +13,7 @@ Tokens without a handler are emitted as their bare keyword, and their operands c
 ' vb3dec: unhandled P-code: "#" (token 105 @ 0x002E), "Open " (token 142 @ 0x0030)
 ```
 
-The console output ends the module table with the number of unhandled tokens and the most frequent ones, and each token is also logged to standard error as `[WARN] ... unhandled opcode`. `FF.EXE` has none; `BASCODE.EXE` has 338 and `EMPIRE.EXE` 1,065, and `TestSampleUnhandledOpcodeBudget` keeps these numbers from growing. These statements are affected:
-- The `:` statement separator. Statements after it are emitted on separate lines, which moves them out of a single-line `If`, and the separator can be left behind on a line of its own.
+The console output ends the module table with the number of unhandled tokens and the most frequent ones, and each token is also logged to standard error as `[WARN] ... unhandled opcode`. `FF.EXE` has none; `BASCODE.EXE` has 206 and `EMPIRE.EXE` 860, and `TestSampleUnhandledOpcodeBudget` keeps these numbers from growing. These statements are affected:
 - `On Error GoTo 0`, whose encoding is unknown because no sample program uses it.
 - File I/O: `Open`, `Close`, `Input #`, `Line Input #`, `Print #`, `Get`, `Put`, and `#` file numbers.
 - The `Print` method of forms, picture boxes and `Printer`, and its `;` and `,` separators (the `v0`, `eol`, and `eop` tokens).

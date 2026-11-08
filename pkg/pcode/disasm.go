@@ -455,6 +455,7 @@ type procDisasmState struct {
 	ifCond           string                   // In-flight single-line If condition
 	lastSingleLineIf bool                     // Tracks if the last emitted line was a single-line If
 	singleLineElse   bool                     // In-flight single-line Else clause
+	joinLine         bool                     // The next line continues the last one after a ":" separator
 	caseIndentStack  []bool                   // Tracks indentation inside Case blocks for nested Select Case
 	arrayVars        map[uint16]bool          // offset -> true if variable is an array (e.g. ReDim'd)
 	pendingAsType    string                   // In-flight "As <Type>" clause for ReDim
@@ -648,10 +649,32 @@ func (s *procDisasmState) pop() string {
 	return val
 }
 
+// flushStatement emits the statement left on the expression stack, such as a
+// method call, and clears the stack. It reports whether the stack held one.
+func (s *procDisasmState) flushStatement() bool {
+	if len(s.stack) == 0 {
+		return false
+	}
+	stmt := s.pop()
+	if stmt != "" && !strings.HasPrefix(stmt, "'") && stmt != "End" && stmt != "End " {
+		s.emitStatement(stmt)
+	}
+	s.stack = s.stack[:0]
+	return true
+}
+
 func (s *procDisasmState) emitLine(line string) {
 	if line == "" {
 		return
 	}
+	if s.joinLine && !s.singleLineElse {
+		// After a ":" separator. A single-line If stays single-line, so
+		// that an Else after it still joins it.
+		s.lines[len(s.lines)-1] += ": " + line
+		s.joinLine = false
+		return
+	}
+	s.joinLine = false
 	if s.singleLineElse {
 		if len(s.lines) > 0 {
 			s.lines[len(s.lines)-1] += " Else " + line
@@ -1089,7 +1112,9 @@ func (s *procDisasmState) disassemble() (string, error) {
 		startPC := s.pc
 
 		if lbl, ok := s.labels[startPC]; ok {
+			// A label starts a line, even after a ":" separator.
 			s.lines = append(s.lines, lbl+":")
+			s.joinLine = false
 		}
 
 		if s.pc+2 > len(bc) {
@@ -1158,34 +1183,21 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 	kw := info.Keyword
 
 	switch {
-	case info.Case == 5 || kw == "nl":
+	case info.Case == 5 || kw == "nl" || info.Case == 4 || kw == "eos":
+		// End of the line, or of the procedure.
 		s.lastSingleLineIf = false
 		s.pendingLet = false
-		if len(s.stack) > 0 {
-			stmt := s.pop()
-			if stmt != "" && !strings.HasPrefix(stmt, "'") && stmt != "End" && stmt != "End " {
-				s.emitStatement(stmt)
-			}
-			s.stack = s.stack[:0]
-		} else if s.ifCond != "" {
+		s.joinLine = false
+		if !s.flushStatement() && s.ifCond != "" {
 			s.emitLine(fmt.Sprintf("If %s Then", s.ifCond))
 			s.indent++
 			s.ifCond = ""
 		}
 
-	case info.Case == 4 || kw == "eos":
-		s.lastSingleLineIf = false
-		if len(s.stack) > 0 {
-			stmt := s.pop()
-			if stmt != "" && !strings.HasPrefix(stmt, "'") && stmt != "End" && stmt != "End " {
-				s.emitStatement(stmt)
-			}
-			s.stack = s.stack[:0]
-		} else if s.ifCond != "" {
-			s.emitLine(fmt.Sprintf("If %s Then", s.ifCond))
-			s.indent++
-			s.ifCond = ""
-		}
+	case kw == ": " || kw == ":":
+		// Statement separator: the next statement continues this line.
+		s.flushStatement()
+		s.joinLine = len(s.lines) > 0
 
 	case kw == "pop.var=":
 		var propID uint16
@@ -2121,6 +2133,9 @@ func (s *procDisasmState) noteUnhandled(info *OpcodeInfo, pc int) {
 		s.noteIndent = make(map[int]int)
 	}
 	at := len(s.lines)
+	if s.joinLine {
+		at-- // The next statement continues the last line.
+	}
 	if _, ok := s.noteIndent[at]; !ok {
 		s.noteIndent[at] = s.indent
 	}
