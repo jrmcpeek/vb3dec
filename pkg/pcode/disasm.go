@@ -460,6 +460,7 @@ type procDisasmState struct {
 	inputVars        []string                 // Variables of an in-flight "Input #"
 	printing         bool                     // A Print statement is in flight
 	printFile        bool                     // The in-flight Print statement is "Print #"
+	printIsWrite     bool                     // The in-flight "Print #"-shaped statement is actually "Write #"
 	printDepth       int                      // Stack depth of the Print target; its items are above it
 	printItems       string                   // Items and separators of the in-flight Print statement
 	caseIndentStack  []bool                   // Tracks indentation inside Case blocks for nested Select Case
@@ -2205,6 +2206,42 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 		// Time$, Now, CurDir$, Dir$, Command$, Nothing, ...
 		s.push(kw)
 
+	case kw == "Me":
+		// The "Me" keyword token: push it as an ordinary identifier, the
+		// same as the default case below would, but without the unhandled
+		// warning — this is a fully understood token, not a gap.
+		s.push(kw)
+
+	case kw == "AppActivate" || kw == "SendKeys":
+		// Both are void statements taking 1-2 arguments (title/keys, and an
+		// optional wait flag), already on the stack in order.
+		argCount := len(s.stack)
+		if argCount > 2 {
+			argCount = 2
+		}
+		var args []string
+		for i := 0; i < argCount; i++ {
+			args = append([]string{s.pop()}, args...)
+		}
+		line := kw
+		if formatted := formatArgList(args); formatted != "" {
+			line += " " + formatted
+		}
+		s.emitStatement(line)
+
+	case !s.printing && kw == "Write ":
+		// VB3's "Write #file, ..." statement compiles to exactly the same
+		// token stream as "Print #file, ...", led by this token instead of
+		// "v0"/"eom" deciding the statement is a Print. It carries no value
+		// of its own (traced: it is the very first token, before "#file"
+		// and "eom" even run) — it was previously falling to default,
+		// which wrongly pushed it as a value. That value then sat beneath
+		// the Print machinery's own stack items (since printDepth captured
+		// it as part of "below the target"), survived endPrint, and
+		// resurfaced afterward as a stray, argument-less "Write" statement
+		// line, while the real statement was mislabeled "Print" throughout.
+		s.printIsWrite = true
+
 	default:
 		if kw != "" && kw != "?" {
 			s.push(kw)
@@ -2234,6 +2271,10 @@ func (s *procDisasmState) decodeInstruction(info *OpcodeInfo, altToken uint16, p
 func (s *procDisasmState) startPrint(file bool) {
 	s.printing = true
 	s.printFile = file
+	// printIsWrite is NOT reset here: a leading "Write " token (see its case
+	// in decodeInstruction) sets it just before this runs, for the "eom"
+	// token that starts the Print-shaped sequence a real Write statement
+	// also uses. endPrint always clears it again once consumed.
 	s.printDepth = len(s.stack)
 	s.printItems = ""
 }
@@ -2242,14 +2283,19 @@ func (s *procDisasmState) startPrint(file bool) {
 func (s *procDisasmState) endPrint() {
 	items := strings.TrimSpace(s.printItems)
 	target := s.pop()
-	stmt := qualifyMember(target, "Print")
+	label := "Print"
+	if s.printIsWrite {
+		label = "Write"
+	}
+	stmt := qualifyMember(target, label)
 	if s.printFile {
-		stmt = "Print " + target + ","
+		stmt = label + " " + target + ","
 	}
 	if items != "" {
 		stmt += " " + items
 	}
 	s.printing = false
+	s.printIsWrite = false
 	s.emitStatement(stmt)
 }
 
