@@ -93,13 +93,24 @@ func ParseVBProject(f *ne.File) (*ProjectInfo, error) {
 				extraLen := int(data[pos])
 				pos++
 				if pos+extraLen <= len(data) {
-					nameStr = strings.TrimRight(win1252.Decode(data[pos:pos+extraLen]), "\x00")
+					nameStr = strings.TrimRight(win1252.Decode(data[pos:pos+extraLen]), "\x00\r\n")
 					pos += extraLen
 				}
 			}
 		} else if nameLen > 0 && pos+nameLen <= len(data) {
-			nameStr = strings.TrimRight(win1252.Decode(data[pos:pos+nameLen]), "\x00")
+			nameStr = strings.TrimRight(win1252.Decode(data[pos:pos+nameLen]), "\x00\r\n")
 			pos += nameLen
+		}
+		// A name field that decodes to leftover control bytes (seen in some
+		// AOHell-era forms: a run of \x00 padding plus a stray \r that survives
+		// trimming) isn't a real name. Treat it the same as an empty name so it
+		// falls through to the generated FRM<N>.FRM fallback below instead of
+		// producing an invalid filename later.
+		for _, r := range nameStr {
+			if r < 0x20 {
+				nameStr = ""
+				break
+			}
 		}
 
 		// Read sub-items for Form and ControlType records
@@ -143,7 +154,19 @@ func ParseVBProject(f *ne.File) (*ProjectInfo, error) {
 				ModuleID:    moduleID,
 			}
 			// Unprotected executables keep the form and control names in the
-			// RT_RCDATA resource following the form stream.
+			// RT_RCDATA resource following the form stream. This is the
+			// authoritative source for the form's real name -- prefer it for
+			// FileName too, not just FormName. The project directory's own
+			// primary name field is sometimes corrupted to a short garbage
+			// fragment (observed: a single leading byte, followed by null
+			// padding and a trailing \r, e.g. "M\x00\x00\x00\x00\x00\r\x00")
+			// that survives trailing-whitespace trimming as a short-but-
+			// nonempty string. That bypasses both the vbGuardDetected/
+			// FRM<N>.FRM fallback (which only triggers on a fully empty
+			// name) and looks like a deliberately short, valid filename, so
+			// without this, FileName silently ends up wrong (e.g. "M"
+			// instead of "mm2.FRM") while FormName -- already fixed up from
+			// this same lookup -- is correct.
 			if names := readNameTable(f, actualResID+1); len(names) > 0 && names[0] != "" {
 				ref.FormName = names[0]
 				ref.ControlNames = make(map[int]string)
@@ -151,6 +174,9 @@ func ParseVBProject(f *ne.File) (*ProjectInfo, error) {
 					if name != "" {
 						ref.ControlNames[id+1] = name
 					}
+				}
+				if !looksLikeRealFRMFilename(fileName) {
+					ref.FileName = names[0] + ".FRM"
 				}
 			}
 			forms = append(forms, ref)
@@ -208,4 +234,20 @@ func readNameTable(f *ne.File, resID uint16) []string {
 		pos += n
 	}
 	return names
+}
+
+// looksLikeRealFRMFilename reports whether name is plausibly a genuine,
+// intentional .FRM filename (the generated "FRM<N>.FRM" fallback counts, as
+// does any author-chosen "Something.FRM"), as opposed to a short garbage
+// fragment left over from a corrupted project-directory name field (observed:
+// a single leading byte followed by null padding and a trailing \r, which
+// survives trailing-whitespace trimming as a short, non-empty, no-extension
+// string like "M" or "P"). A real VB3 .FRM filename is always at least one
+// character plus the 4-character ".FRM" extension.
+func looksLikeRealFRMFilename(name string) bool {
+	if len(name) < 5 {
+		return false
+	}
+	lower := strings.ToLower(name)
+	return strings.HasSuffix(lower, ".frm")
 }
